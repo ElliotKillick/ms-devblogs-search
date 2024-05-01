@@ -1,0 +1,366 @@
+
+
+
+	
+        Stop cherry-picking, start merging, Part 9: Chasing the commit          Raymond Chen        
+            
+            March 22nd, 20180 0
+		
+        Consider the following situation:
+ 
+ 
+
+
+
+ 
+ 
+apple
+
+
+ 
+ 
+M1
+ 
+master
+
+
+apple
+↙︎
+
+
+A
+
+
+ 
+↖︎
+apple
+ 
+ 
+ 
+apple
+ 
+berry
+
+
+ 
+ 
+V1
+← ← ←
+V2
+←
+V3
+ 
+victim
+
+
+ 
+↖︎
+ 
+↙︎
+ 
+
+
+ 
+F1
+←
+F2
+← ← ←
+F3
+ 
+feature
+
+
+ 
+apple
+ 
+berry
+ 
+cherry
+
+
+
+From a starting common commit A (where the line is “apple”), the master branch makes an unrelated commit M1. Meanwhile we branch off from commit A with a new branch called “victim”, on which unrelated commits V1 and V2 are made. From commit V1, another branch called “feature” is created, where an unrelated commit F1 is made. After commit F1, there is another commit F2 which changes the line from “apple” to “berry”. At this point, the feature branch merges back to the victim branch, resulting in a merge commit V3, where the line is now “berry”. After the merge, another commit F3 is made to the feature branch, which changes the line from “berry” to “cherry”.
+At this point, you decide that you want commit F2 (the one that changed “apple” to “berry”) to go to master. Maybe there was some problem that F2 fixes which you thought was local to your feature branch, but it turns out that it affected the master branch too, and now the people who run the master branch want your temporary fix.
+So we follow our cookbook. The patch branch uses commit A as its starting point. It cherry-picks a copy of F2 and merges it into the master branch.
+
+
+
+ 
+ 
+apple
+ 
+berry
+
+
+ 
+ 
+M1
+← ← ← ← ←
+M2
+ 
+master
+
+
+apple
+↙︎
+ 
+berry
+↙︎
+
+
+A
+← ← ← ← ←
+P
+ 
+patch
+
+
+ 
+↖︎
+apple
+ 
+apple
+ 
+berry
+↖︎
+
+
+ 
+ 
+V1
+← ← ←
+V2
+←
+V3
+ 
+?
+ 
+victim
+
+
+ 
+↖︎
+ 
+↙︎
+ 
+
+
+ 
+F1
+←
+F2
+← ← ←
+F3
+ 
+feature
+
+
+ 
+apple
+ 
+berry
+ 
+cherry
+
+
+
+But what about the other half of the merge pair? Does the patch branch merge into the feature branch?
+No, merging into the feature branch won’t help. Commit F2 has already been merged into the victim branch, and is on its way to merging into the master branch. Any changes to the feature branch at this point will have no effect on the payload that is already on  the train.
+You have to merge the patch branch into the branches that have carried the original change closest to its destination, and the cherry-pick closest to the source. In our example, the source is the feature branch and the destination is the master branch. The commit has merged as far as the victim branch, so that’s where the patch needs to go. Because the point of the patch branch is to make sure the right thing happens when the original commit (F2) and its cherry-picked doppelgänger (M2) meet and need to merge together.
+In other words, you need to catch the train.
+
+
+
+ 
+ 
+apple
+ 
+berry
+
+
+ 
+ 
+M1
+← ← ← ← ←
+M2
+←
+M3
+ 
+master
+
+
+apple
+↙︎
+ 
+berry
+↙︎
+ 
+ 
+↙︎
+
+
+A
+← ← ← ← ←
+P
+ 
+ 
+↙︎
+ 
+patch
+
+
+ 
+↖︎
+apple
+ 
+apple
+ 
+berry
+↖︎
+ 
+↙︎
+
+
+ 
+ 
+V1
+← ← ←
+V2
+←
+V3
+←
+V4
+ 
+ 
+ 
+victim
+
+
+ 
+↖︎
+ 
+↙︎
+ 
+
+
+ 
+F1
+←
+F2
+← ← ←
+F3
+ 
+ 
+ 
+feature
+
+
+ 
+apple
+ 
+berry
+ 
+cherry
+
+
+
+The correct merge destination for the patch branch is the victim branch, resulting in commit V4. That way, when the victim branch merges with the master branch as commit M3, commit P becomes an eligible merge base.
+
+
+window.addEventListener("load", function() {
+  var fullFF = getComputedStyle(document.body).fontFamily;
+  var simpleFF = fullFF.replace(/ Emoji/g, "");
+  // break up "style" to prevent wordpress from injecting random junk
+  document.getElementById("p20180322_head").innerHTML =
+`<s` + `tyle>
+body { font-family: ${simpleFF}; }
+.emoji { font-family: ${fullFF}; }
+.entry-content th { padding: 1px; } /* stylesheet workaround */
+.entry-content td { padding: 1px; } /* stylesheet workaround */
+.entry-content { word-break: inherit; } /* stylesheet workaround */
+</s` + `tyle>`;
+}); // wacky comment to prevent wordpress from injecting random junk
+(function() {
+  var svg = {
+    defs: `<svg width="0" height="0">
+ <defs>
+  <marker id="arrowhead" markerWidth="5" markerHeight="5" refX="-2" refY="0"
+    viewBox="-6 -6 12 12" orient="auto">
+    <polygon points="-2,0 -5,5 5,0 -5,-5" fill="black" stroke="black"
+      stroke-dasharray="1 0" />
+  </marker>
+  <path id="larr" d="M20,10 L3,10" stroke="black"
+   marker-end="url(#arrowhead)" />
+  <path id="larr3" d="M98,10 L3,10" stroke="black"
+   marker-end="url(#arrowhead)" />
+  <path id="larr7" d="M258,10 L3,10" stroke="black"
+   marker-end="url(#arrowhead)" />
+  <path id="nwarr" d="M20,20 L3,3" stroke="black"
+   marker-end="url(#arrowhead)" />
+  <path id="swarr" d="M20,2 L3,17" stroke="black"
+   marker-end="url(#arrowhead)" />
+ </defs>
+</svg>`,
+    larr: `<svg width="20" height="20"><use href="#larr"/></svg>`,
+    larr3: `<svg width="98" height="20"><use href="#larr3"/></svg>`,
+    larr7: `<svg width="258" height="20"><use href="#larr7"/></svg>`,
+    nwarr: `<svg width="20" height="20"><use href="#nwarr"/></svg>`,
+    swarr: `<svg width="20" height="20"><use href="#swarr"/></svg>`,
+    blank: `<svg width="20" height="20"></svg>`,
+    svg01: `<svg width="50" height="20" style="overflow: visible">
+     <path d="M138,-15 L-17,27" fill="transparent" stroke="black" marker-end="url(#arrowhead)" />
+    </svg>`
+  };
+  Object.keys(svg).forEach(function (key) {
+    Array.prototype.forEach.call(document.querySelectorAll("#p20180322_" + key),
+      function (e) {
+        e.innerHTML = svg[key];
+      });
+  });
+})();
+
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Other
+	
+

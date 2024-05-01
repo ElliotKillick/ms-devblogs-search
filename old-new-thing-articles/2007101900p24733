@@ -1,0 +1,141 @@
+
+
+
+	
+        Other problems traced to violating COM single-threaded apartment rules in the shell          Raymond Chen        
+            
+            October 19th, 20070 0
+		
+        
+Probably the biggest category of problems that can be traced to
+violating COM single-threaded apartment rules in the shell is
+using an object from the wrong thread.
+Of course, nobody admits to doing this up front,
+They just report that the shell is broken.
+
+
+We can’t enumerate the items on the desktop any more.
+We take the pointer returned by SHGetDesktopFolder
+and call IShellFolder::EnumObjects, but no objects
+come out.
+This code used to work on Windows XP.
+
+
+There isn’t enough information to diagnose the problem,
+and if you just do what they claim doesn’t work,
+you find that it works:
+
+
+#include <windows.h>
+#include <ole2.h>
+#include <shlobj.h>
+#include <shlwapi.h>
+#include <stdio.h>
+#include <tchar.h>
+INT __cdecl
+_tmain(
+    INT iArgc,
+    __in_ecount(iArgc) PTSTR ppszArgv[]
+    )
+{
+ if (SUCCEEDED(CoInitialize(NULL))) {
+  IShellFolder *psf;
+  if (SUCCEEDED(SHGetDesktopFolder(&psf))) {
+   IEnumIDList *peidl;
+   if (SUCCEEDED(psf->EnumObjects(NULL, SHCONTF_FOLDERS |
+                         SHCONTF_NONFOLDERS, &peidl)) && peidl) {
+    LPITEMIDLIST pidl;
+    while (peidl->Next(1, &pidl, NULL) == S_OK) {
+     STRRET str;
+     if (SUCCEEDED(psf->GetDisplayNameOf(pidl,
+                                         SHGDN_NORMAL, &str))) {
+      TCHAR sz[MAX_PATH];
+      if (SUCCEEDED(StrRetToBuf(&str, pidl, sz, MAX_PATH))) {
+       _tprintf(TEXT("%s\n"), sz);
+      }
+     }
+     ILFree(pidl);
+    }
+   }
+   psf->Release();
+  }
+  CoUninitialize();
+ }
+ return 0;
+}
+
+
+When given this simple program that does what they claim doesn’t work,
+the customer explained that they cache the desktop folder.
+It works for a while, and then stops working.
+The code is complicated, so they haven’t been able to isolate the problem yet.
+They did find that if they didn’t cache the pointer
+and just called SHGetDesktopFolder each time they needed it,
+then they didn’t have the problem.
+
+
+I never got a confirmation,
+but I’m pretty sure that they are violating COM apartment threading
+model rules and obtaining the desktop folder obtained on one thread,
+then using it on another.
+Apartment model rules specify that you must use an object on the same
+thread that created it.
+If you want to use it on another thread,
+you have to use a helper function like
+CoMarshalInterThreadInterfaceInStream.
+If you just dive in and use it on another thread
+(known informally as
+“smuggling“),
+then all sorts of strange things happen.
+In this case, the folder can’t enumerate objects any more.
+
+
+Moral of the story:
+Stick to the rules for COM objects.
+If you don’t, you may get away with it for a little while,
+but someday your sins may catch up to you.
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

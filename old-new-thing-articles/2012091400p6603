@@ -1,0 +1,59 @@
+
+
+
+	
+        IShellFolder::BindToObject is a high-traffic method; don't do any heavy lifting          Raymond Chen        
+            
+            September 14th, 20120 0
+		
+        A customer observed that once the user visited their shell extension, Explorer ran really slowly. (Actually, it took a while just to get to this point, but I’ll skip the early investigations because they aren’t relevant to the story.) Some investigation showed that Explorer’s tree view was calling into the shell extension, which was in turn hanging the shell for several seconds at a time.
+ Explorer was calling into the shell extension because the node was in the folder tree view, and Explorer was doing a little bookkeeping to synchronize the folder state with the view. The node referred to a server that was no longer available, so when Explorer asked the shell extension, “Hey, do you have any translucent froodads for me?” the shell extension went off and tried to contact the server (30 second timeout) before returning with the answer, “Um, sorry, I’m not sure what you’re talking about.”
+ The problem was in the shell extension’s IShell­Folder::Bind­To­Object method. The Bind­To­Object method is how you navigate from a parent to a child object, but this is supposed to be a lightweight navigation. Don’t try to validate that the child still exists. Just bind to the child as if it existed. Only when the client tries to do something interesting should you go check whether the object actually exists.
+ You can see this in the shell, for example. Suppose you generate a pidl to a network server. Meanwhile, the network server goes down. If you try to bind to that pidl, the bind will succeeed (and quickly). Only if you then ask a question like Enum­Objects will you find out, “Oh, wait, this server doesn’t actually exist.”
+ (Validating existence on bind doesn’t really buy you much anyway, because the server might go down after the bind succeeds but before the Enum­Objects call, so clients have to be prepared anyway for the possibility of a successful bind but a failed enumeration.)
+ In the shell, binding is a common operation since it’s a prerequisite for talking about objects. As long as the pidl is valid, you should succeed the bind. Try not to hit the disk and definitely don’t hit the network. There’s plenty of time to do that later. Because the bind may not even have been done with the intention of communicating with the target; the client may have bound to the pidl just to be able to talk about the target. (As in this case, where the shell wasn’t interested in the target per se; it just wanted to know if the target had a translucent froodad.) 
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

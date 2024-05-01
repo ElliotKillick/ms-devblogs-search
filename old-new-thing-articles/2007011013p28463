@@ -1,0 +1,144 @@
+
+
+
+	
+        How do I load an entire file into a rich text control?          Raymond Chen        
+            
+            January 10th, 20070 0
+		
+        
+To load an entire file into a rich text control, you can use
+the EM_STREAMIN message,
+which accepts an IStream of data all at once.
+Once you find the message, it’s pretty straightforward how to use it,
+but I’ll write out the code anyway;
+
+
+DWORD CALLBACK EditStreamCallback(DWORD_PTR dwCookie, LPBYTE lpBuff,
+                                  LONG cb, PLONG pcb)
+{
+ HANDLE hFile = (HANDLE)dwCookie;
+ return !ReadFile(hFile, lpBuff, cb, (DWORD *)pcb, NULL);
+}
+BOOL FillRichEditFromFile(HWND hwnd, LPCTSTR pszFile)
+{
+ BOOL fSuccess = FALSE;
+ HANDLE hFile = CreateFile(pszFile, GENERIC_READ, FILE_SHARE_READ,
+                           0, OPEN_EXISTING,
+                           FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+ if (hFile != INVALID_HANDLE_VALUE) {
+  EDITSTREAM es = { (DWORD_PTR)hFile, 0, EditStreamCallback };
+  if (SendMessage(hwnd, EM_STREAMIN, SF_RTF, (LPARAM)&es) &&
+      es.dwError == 0) {
+   fSuccess = TRUE;
+  }
+  CloseHandle(hFile);
+ }
+ return fSuccess;
+}
+
+
+You pretty much follow your nose.
+The EM_STREAMIN message wants you
+to tell it the format of the stream (SF_RTF)
+and provide a pointer to an EDITSTREAM structure
+that controls the input.
+Since we want to read from a file, we open a file for reading
+and use it as the dwCookie for
+our EditStreamCallback.
+The only tricky part is getting the return value correct for the
+callback.
+For some reason, the rich edit control wants zero on success and
+nonzero on failure, so we need to flip the sense of the
+ReadFile return value accordingly.
+Aside from that, there’s nothing particularly interesting going on.
+
+
+“But I tried this, and only the first line of the file gets read in.
+What am I doing wrong?”
+
+
+Ah, a classic rookie mistake.
+You forgot to set the ES_MULTILINE style when you created
+the rich edit control.
+
+
+Don’t worry, I made this mistake, too.
+
+
+“What if my data is in some other format than a file?”
+
+
+As long as you can write a function that produces the next few bytes
+of data,
+you can stream it into a rich edit control.
+For example, here’s a version that loads an arbitrary IStream
+into a rich edit control:
+
+
+DWORD CALLBACK EditStreamCallback(DWORD_PTR dwCookie, LPBYTE lpBuff,
+                                  LONG cb, PLONG pcb)
+{
+ IStream *pstm = (IStream *)dwCookie;
+ return FAILED(pstm->Read(lpBuff, cb, (ULONG*)pcb));
+}
+BOOL FillRichEditFromStream(HWND hwnd, IStream *pstm)
+{
+ BOOL fSuccess = FALSE;
+ EDITSTREAM es = { (DWORD_PTR)pstm, 0, EditStreamCallback };
+ if (SendMessage(hwnd, EM_STREAMIN, SF_RTF, (LPARAM)&es) &&
+     es.dwError == 0) {
+  fSuccess = TRUE;
+ }
+ return fSuccess;
+}
+
+
+There’s still a bug in this code, however,
+and it’s not where you expect it.
+We’ll take another look next time.
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

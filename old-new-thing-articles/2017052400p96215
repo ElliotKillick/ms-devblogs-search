@@ -1,0 +1,72 @@
+
+
+
+	
+        Some questions about unflushed data and calling FlushFileBuffers on a new handle to a file          Raymond Chen        
+            
+            May 24th, 20170 0
+		
+        Consider the following sequence of events: 
+
+Process A opens a file with Create­File     with attributes that include neither     FILE_FLAG_NO_BUFFERING     nor     FILE_FLAG_WRITE_THROUGH. 
+Process A writes to the file with Write­File.     These writes are internally buffered since we didn’t disable buffering. 
+Process A crashes without calling Close­Handle,     and before the operating system’s internal buffers     are flushed to disk. 
+
+First question: Under these conditions, will the data written in step 2 be lazy-written to disk? Or is it at risk of being lost forever because the handle wasn’t closed? 
+Let’s look at the last part first. Whether the process closed the handle before crashing doesn’t affect the story, because the kernel will close all the handles as part of process cleanup. The handle does get closed eventually. Whether the handle closure was done explicitly by the app or implicitly by the kernel doesn’t affect the answer. 
+Okay, now let’s look at the first part: Yes, the data written in step 2 will eventually be lazy-written to disk, assuming your system doesn’t crash before then. 
+And that’s the middle part of the question: The data is at risk of being lost forever, but not because the handle wasn’t closed. It’s at risk of being lost forever because the system might crash before it gets flushed out. 
+Okay, let’s extend the scenario: 
+
+Before the operating system flushes its internal     buffers naturally,     Process B opens the same file, with the same attributes. 
+Process B calls Flush­File­Buffers. 
+
+Does this call to Flush­File­Buffers cause the data written by Process A to be flushed to disk? 
+Yes. A call to Flush­File­Buffers will flush data for that file, even if the data was written by a different handle. 
+If Flush­File­Buffers is never called, then the operating system will flush the buffer at its convenience. 
+Note: In step 2, the relevant call is Write­File. If you write the data to the file using a runtime-provided function like fwrite, then that data might be sitting in the runtime’s buffer without ever triggering a Write­File. Only when the data is written with Write­File does the data actually reach the operating system’s buffers. 
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

@@ -1,0 +1,131 @@
+
+
+
+	
+        Do you need clean up one-shot timers?          Raymond Chen        
+            
+            December 23rd, 20040 0
+		
+        
+
+The CreateTimerQueueTimer function allows you to create
+one-shot timers by passing
+the WT_EXECUTEONLYONCE flag.
+The documentation says that
+you need to call
+
+the DeleteTimerQueueTimer function
+when you no longer need the timer.
+
+
+Why do you need to clean up one-shot timers?
+
+
+To answer this, I would like to introduce you to one of my
+favorite rhetorical questions when trying to puzzle out
+API design:
+“What would the world be like if this were true?”
+
+
+Imagine what the world would be like if you didn’t need to
+clean up one-shot timers.
+
+
+Well, for one thing, it means that the behavior of the
+function would be confusing.  The caller of the
+the CreateTimerQueueTimer function would have
+to keep track of whether the timer was one-shot or not,
+to know whether or not the handle needed to be deleted.
+
+
+But far, far worse is that if one-shot timers were self-deleting,
+it would be impossible to use them correctly.
+
+
+Suppose you have an object that creates a one-shot timer,
+and you want to clean it up in your destructor if it hasn’t fired yet.
+If one-shot timers were self-deleting,
+then it would be impossible to write this object.
+
+
+class Sample {
+ HANDLE m_hTimer;
+ Sample() : m_hTimer(NULL) { CreateTimerQueueTimer(&m_hTimer, …); }
+ ~Sample() { … what to write here? … }
+};
+
+ 
+You might say, “Well, I’ll have my callback null out the
+m_hTimer variable. That way, the destructor
+will know that the timer has fired.”
+
+
+Except that’s a race condition.
+
+
+Sample::Callback(void *context)
+{
+  /// RACE WINDOW HERE
+  ((Sample*)context)->m_hTimer = NULL;
+  …
+}
+
+ 
+If the callback is pre-empted during the race window
+and the object is destructed,
+and one-shot timers were self-deleting,
+then the object would attempt to use an invalid handle.
+
+
+This race window is uncloseable
+since the race happens even before
+you get a chance to execute a single line of code.
+
+
+So be glad that you have to delete handles to one-shot timers.
+
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

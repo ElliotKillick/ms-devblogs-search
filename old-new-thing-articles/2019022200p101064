@@ -1,0 +1,97 @@
+
+
+
+	
+        How do I permit a minus sign to be entered into my edit control, but only if it’s the first character?          Raymond Chen        
+            
+            February 22nd, 20190 0
+		
+        Last time, we saw how to implement the equivalent of the ES_NUMBER edit control style, but also allow a minus sign. For bonus points, let’s allow the minus sign only if it is going at the start of the edit control. 
+
+bool IsAtStartOfEditControl(HWND hwnd)
+{
+ return LOWORD(SendMessage(hwnd, EM_GETSEL, 0, 0)) == 0;
+}
+
+LRESULT CALLBACK SignedIntegerSubclassProc(
+    HWND hwnd,
+    UINT uMsg,
+    WPARAM wParam,
+    LPARAM lParam,
+    UINT_PTR uIdSubclass,
+    DWORD_PTR dwRefData)
+{
+ switch (uMsg) {
+ case WM_NCDESTROY:
+  RemoveWindowSubclass(hwnd, SignedIntegerSubclassProc, uIdSubclass);
+  break;
+
+ case WM_CHAR:
+  {
+   wchar_t ch = (wchar_t)wParam;
+   if (ch < L' ') break;                // let control character through
+   else if ((ch == L'-' || ch == L'\x2212') && // hyphen-minus or Unicode minus sign
+            IsAtStartOfEditControl(hwnd)) break; // at start of edit control is okay
+   else if (IsUnicodeDigit(ch)) break;  // let digit through
+   MessageBeep(0);                      // otherwise invalid
+   return 0;
+  }
+ }
+
+ return DefSubclassProc(hwnd, uMsg, wParam, lParam);
+}
+
+BOOL EnforceSignedIntegerEdit(HWND hwnd)
+{
+ return SetWindowSubclass(hwnd, SignedIntegerSubclassProc, 0, 0);
+}
+
+We make a tweak to our previous filter to allow minus signs through, but only if the character is being inserted at the start of the edit control. To determine whether the insertion is happening at the start of the edit control, we query the current selection and see whether its start (the low word) is at position zero. 
+While it’s true that the EM_GET­SEL message does not return accurate values if the start or end index is greater than 65535, the behavior in such cases is to report an index of 1, which is fine for us, because all we care about is that it’s not zero. 
+Note, however, that this code is not sufficient to guarantee that a minus sign never appears anywhere but the start of the string. The user can use Ctrl+V to paste a minus sign anywhere in the string. Or the user could go back to the start of the string and start inserting digits, which will push the existing minus sign away from index zero. 
+So it’s not clear how valuable this extra filter is. You might be better off just letting people enter whatever they want, and then validate it all later. 
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

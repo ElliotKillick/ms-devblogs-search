@@ -1,0 +1,118 @@
+
+
+
+	
+        How to host an IContextMenu, part 8 – Optimizing for the default command          Raymond Chen        
+            
+            October 1st, 20040 0
+		
+        
+There is a small improvement that can be made to
+
+to the program we wrote last time.
+It involves taking advantage of the last parameter to
+
+the IContextMenu::QueryContextMenu method:
+
+
+
+CMF_DEFAULTONLY
+This flag is set when the user is activating the default action,
+typically by double-clicking.
+This flag provides a hint for the shortcut menu extension
+to add nothing if it does not modify the default item in the menu.
+A shortcut menu extension or drag-and-drop handler
+should not add any menu items if this value is specified.
+A namespace extension should add only the default item (if any).
+
+
+As the text from MSDN indicates, this flag is a hint to the
+IContextMenu implementation
+that it should worry only about the default command.
+
+
+void OnContextMenu(HWND hwnd, HWND hwndContext, UINT xPos, UINT yPos)
+{
+  IContextMenu *pcm;
+  if (SUCCEEDED(GetUIObjectOfFile(hwnd, L”C:\\Windows\\clock.avi”,
+                   IID_IContextMenu, (void**)&pcm))) {
+    HMENU hmenu = CreatePopupMenu();
+    if (hmenu) {
+      if (SUCCEEDED(pcm->QueryContextMenu(hmenu, 0,
+                             SCRATCH_QCM_FIRST, SCRATCH_QCM_LAST,
+                             CMF_DEFAULTONLY))) {
+        UINT id = GetMenuDefaultItem(hmenu, FALSE, 0);
+        if (id != (UINT)-1) {
+          CMINVOKECOMMANDINFO info = { 0 };
+          info.cbSize = sizeof(info);
+          info.hwnd = hwnd;
+          info.lpVerb = MAKEINTRESOURCEA(id – SCRATCH_QCM_FIRST);
+          pcm->InvokeCommand(&info);
+        }
+      }
+      DestroyMenu(hmenu);
+    }
+    pcm->Release();
+  }
+}
+
+
+With this change on my machine, the time taken by the call to
+IContextMenu::QueryContextMenu dropped from 100ms to 50ms.
+Your mileage may vary.
+It depends on how many context menu extensions you have and
+how well they respect the CMF_DEFAULTONLY flag.
+
+
+(And this exercise highlights how important it is that people
+who implement the IContextMenu
+interface pay attention to the flags.
+
+If your context menu handler doesn’t respect the CMF_DEFAULTONLY
+flag, then you’re part of the problem.)
+
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

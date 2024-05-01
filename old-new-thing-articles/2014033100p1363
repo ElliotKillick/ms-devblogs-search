@@ -1,0 +1,812 @@
+
+
+
+	
+        A puzzle involving dynamic programming, or maybe it doesn't          Raymond Chen        
+            
+            March 31st, 20140 0
+		
+        
+Here’s a programming challenge:
+
+
+
+Evaluate the following recurrence relation efficiently
+for a given array
+
+[x0, …, xn−1]
+
+and integer
+k.
+
+
+
+
+    f ([x0, x1], 
+    
+
+    k) = 
+    
+
+    (x0 + x1) / 2 
+    
+
+    
+
+    
+
+    for all k, n = 2. 
+    
+
+= 3″>
+
+    f ([x0, …,
+               xn−1], 
+    
+
+    k) = 
+    
+
+    (x0 + xn−1) / 2 + 
+    
+
+    f ([x0, …, xn−2], k + 1) / 2 + 
+    
+
+    f ([x1, …, xn−1], k + 1) / 2 
+    
+
+    for even k, n ≥ 3. 
+    
+
+= 3″>
+
+    f ([x0, …,
+               xn−1], 
+    
+
+    k) = 
+    
+
+     
+    
+
+    f ([x0, …, xn−2], k + 1) / 2 + 
+    
+
+    f ([x1, …, xn−1], k + 1) / 2 
+    
+
+    for odd k, n ≥ 3. 
+    
+
+
+
+Hint: Use dynamic programming.
+
+
+
+In words:
+
+
+If the array has only two elements, then the result is the average
+    of the two elements.
+If the array has more than two elements, then
+    then the result is the sum of the following:
+
+Half the value of the function evaluated on the array with the
+        first element deleted
+        and the second parameter incremented by one.
+Half the value of the function evaluated on the array with the
+        last element deleted
+        and the second parameter incremented by one.
+If the second parameter is even,
+        then also add the average of the first and last elements
+        of the original array.
+    
+
+
+The traditional approach with dynamic programming is to cache intermediate
+results in anticipation that the values will be needed again later.
+The naïve solution, therefore, would have a cache keyed by
+the vector and
+k.
+
+
+My habit when trying to solve these sorts of recurrence relations
+is to solve the first few low-valued cases by hand.
+That gives me a better insight into the problem
+and may reveal some patterns or tricks.
+
+
+
+
+    f ([x0,
+               x1,
+               x2], keven) 
+    
+
+    = (x0 + x2) / 2 +
+    f ([x0, x1], keven + 1) / 2 +
+    f ([x1, x2], keven + 1) / 2
+    
+
+
+ 
+
+    = (x0 + x2) / 2 +
+    f ([x0, x1], kodd) / 2 +
+    f ([x1, x2], kodd) / 2
+    
+
+
+ 
+
+    = (x0 + x2) / 2 +
+      (x0 + x1) / 4 +
+      (x1 + x2) / 4
+    
+
+
+ 
+
+    = ¾x0 +
+      ½x1 +
+      ¾x2
+    
+
+
+
+Even just doing this one computation, we learned a lot.
+(Each of which can be proved by induction if you are new to this sort of
+thing, or which is evident by inspection if you’re handy with math.)
+
+
+First observation:
+The function is linear in the array elements.
+In other words,
+
+
+
+
+    f (x + y, 
+    
+
+    k) 
+    
+
+    = 
+    
+
+    f (x, k) +
+    f (y, k),
+    
+
+
+
+    f (ax, 
+    
+
+    k) 
+    
+
+    = a
+    
+
+    f (x, k).
+    
+
+
+
+To save space and improve readability, I’m using vector notation,
+where
+adding two vectors adds the elements componentwise,
+and multiplying a vector by a constant multiples each component.
+The long-form version of the first of the above equations would be
+
+
+
+
+    f ([x0 + y0,
+    …, xn−1 +
+              yn−1], k) =
+    f ([x0, …, xn−1], k) +
+    f ([y0, …, yn−1], k)
+    
+
+
+
+Since the result is a linear combination
+of the vector elements,
+we can work just with the coefficients and save ourselves some
+typing.
+(“Move to the dual space.”)
+For notational convenience, we will write
+
+
+
+
+    ⟨a0, …
+          an−1⟩ =
+    a0 x0 +
+    ⋯ +
+    an−1 xn−1
+    
+
+
+
+Second observation:
+The specific value of
+k is not important.
+All that matters is whether it is even or odd,
+and each time we recurse to the next level,
+the parity flips.
+So the second parameter is really just a boolean.
+That greatly reduces the amount of stuff we need to cache,
+as well as increasing the likelihood of a cache hit.
+(The naïve version would not have realized that
+f (x, k)
+can steal the cached result from
+f (x, k + 2).)
+
+
+Our previous hand computation can now be written as
+
+
+
+
+    f ([x0,
+               x1,
+               x2], even) 
+    
+
+    = ⟨&frac12, 0, ½⟩ +
+    f ([x0, x1], odd) / 2 +
+    f ([x1, x2], odd) / 2
+    
+
+
+ 
+
+    = ⟨½, 0, ½⟩ +
+    ⟨½, ½, 0⟩ / 2 +
+    ⟨0, ½, ½⟩ / 2
+    
+
+
+ 
+
+    = ⟨½, 0, ½⟩ +
+    ⟨¼, ¼, 0⟩ +
+    ⟨0, ¼, ¼⟩
+    
+
+
+ 
+
+    = ⟨¾, ½, ¾⟩
+    
+
+
+
+Now that we are working with coefficients, we don’t need
+to deal with
+x any more!
+All that matters is the length of the vector.
+This makes our recurrences much simpler:
+
+
+
+
+    f (2, 
+    
+k) 
+    
+
+    = 
+    
+
+    ⟨½, ½⟩ 
+    
+
+    
+
+    
+
+    for all k.
+    
+
+
+
+    f (n, 
+    
+
+    even) 
+    
+= 
+    
+
+    ⟨½, 0, …, 0, ½⟩ + 
+    
+
+    ⟨f (n−1, odd) / 2, 0⟩ + 
+    
+
+    ⟨0, f (n−1, odd) / 2⟩ 
+    
+
+    for n ≥ 3.
+    
+
+
+
+    f (n, 
+    
+
+    odd) 
+    
+= 
+    
+
+     
+    
+
+    ⟨f (n−1, even) / 2, 0⟩ + 
+    
+
+    ⟨0, f (n−1, even) / 2⟩ 
+    
+
+    for n ≥ 3.
+    
+
+
+
+Now we can carry out a few more hand computations.
+
+
+
+
+    f (3, odd) 
+    
+
+    =
+    ⟨f (2, even) / 2, 0⟩ +
+    ⟨0, f (2, even) / 2⟩
+    
+
+
+ 
+
+    =
+    ⟨¼, ¼, 0⟩ +
+    ⟨0, ¼, ¼⟩
+    
+
+
+ 
+
+    = ⟨¼, ½, ¼⟩
+    
+
+
+
+    f (4, even) 
+    
+
+    = ⟨½, 0, 0, ½⟩ +
+    ⟨f (3, odd) / 2, 0⟩ +
+    ⟨0, f (3, odd) / 2⟩
+    
+
+
+ 
+
+    = ⟨½, 0, 0, ½⟩ +
+    ⟨⅛, ¼, ⅛, 0⟩ +
+    ⟨0, ⅛, ¼, ⅛⟩
+    
+
+
+ 
+
+    = ⟨⅝, ⅜, ⅜, ⅝⟩
+    
+
+
+
+    f (4, odd) 
+    
+
+    =
+    ⟨f (3, even) / 2, 0⟩ +
+    ⟨0, f (3, even) / 2⟩
+    
+
+
+ 
+
+    =
+    ⟨⅜, ¼, ⅜, 0⟩ +
+    ⟨0, ⅜, ¼, ⅜⟩
+    
+
+
+ 
+
+    = ⟨⅜, ⅝, ⅝, ⅜⟩
+    
+
+
+
+The interesting thing to observe here is that the recursion
+does not branch.
+When we reduce the size of the vector by one element,
+the recursive calls are basically identical.
+We have to shift the coefficients differently in order
+to build up the results,
+but the recursive call itself is unchanged.
+This means that we need to perform only
+n−2
+recursive steps to compute
+f (n, k).
+
+
+Okay, now that we’ve studied the problem a bit,
+we can write the code.
+I’ll write three versions of the function.
+The first computes according to the recurrence relation
+as originally written.
+We use this to verify our calculations.
+
+
+function f1(x, k) {
+ if (x.length == 2) {
+  return (x[0] + x[1]) / 2;
+ }
+ var term = 0;
+ if (k % 2 == 0) {
+  term = (x[0] + x[x.length - 1]) / 2;
+ }
+ return term +
+        f1(x.slice(0,-1), k + 1) / 2 +
+        f1(x.slice(1), k + 1) / 2;
+}
+Immediate window:
+f1([1,2,3], 0)
+= 4.0
+
+
+Okay, that matches our hand calculations,
+¾·1 + ½·2 + ¾·3 = 4.
+
+
+Now let’s do the straight recursive version.
+
+
+function dotproduct(a, x)
+{
+ var total = 0;
+ for (var i = 0; i < a.length; i++) total += a[i] * x[i];
+ return total;
+}
+function f2a(n, k)
+{
+ if (n == 2) return [1/2, 1/2];
+ var c = new Array(n);
+ for (var i = 0; i < n; i++) c[i] = 0;
+ if (k % 2 == 0) {
+  c[0] = 1/2;
+  c[n-1] = 1/2;
+ }
+ var inner = f2a(n-1, k+1);
+ for (var i = 0; i < n - 1; i++) {
+  c[i] += inner[i] / 2;
+  c[i+1] += inner[i] / 2;
+ }
+ return c;
+}
+function f2(x, k)
+{
+ return dotproduct(f2a(x.length, k), x);
+}
+Immediate window:
+f2([1,2,3], 0)
+= 4.0
+
+
+Notice that there is no dynamic programming involved.
+The hint in the problem statement was a red herring!
+
+
+Finally, we can eliminate the recursion by iterating
+n up from 2.
+
+
+function f3(x, k)
+{
+ var c = new Array(x.length);
+ for (var i = 0; i < x.length; i++) c[i] = 0;
+ c[0] = 1/2;
+ c[1] = 1/2;
+ for (var n = 3; n <= x.length; n++) {
+  var carry = 0;
+  for (var i = 0; i < n; i++) {
+   var nextcarry = c[i];
+   c[i] = (carry + c[i]) / 2;
+   carry = nextcarry;
+  }
+  if ((k + n + x.length) % 2 == 0) {
+   c[0] += 1/2;
+   c[n-1] += 1/2;
+  }
+ }
+ return dotproduct(c, x);
+}
+
+
+I pulled a sneaky trick here in the place we test whether
+we are in the even or odd case.
+Officially, the test should be
+
+
+  if ((k + (x.length - n)) % 2 == 0) {
+
+
+but since we are interested only in whether the result is
+even or odd,
+we can just add the components together,
+because subtraction and addition have the same effect
+on even-ness and odd-ness.
+(If I really felt like micro-optimizing,
+I could fold x.length into k.)
+
+
+Okay, now that we have our code,
+let’s interpret the original problem.
+
+
+The expression
+
+⟨f (n, k) / 2, 0⟩ +
+⟨0, f (n, k) / 2⟩
+takes the vector
+
+f (n, k)
+and averages it against a shifted copy of itself.
+(The word convolution could be invoked here.)
+If you think of the coefficients as describing the distribution
+of a chemical,
+the expression calculates the effect of diffusion after one
+time step according to the simple model
+“At each time step, each molecule has a 50% chance of moving
+to the left and a 50% chance of moving to the right.”
+(Since the length of the vector varies with
+n,
+I’ll visualize the vector drawn with center-alignment.)
+
+
+The base case
+⟨½, ½⟩
+describes the initial conditions of the diffusion,
+where half of the chemicals are on the left and half are
+on the right.
+This is one time step after one unit of the chemical
+was placed in the center.
+Let’s get rid of the extra term in the recurrence and focus
+just on the diffusion aspect:
+
+
+
+
+    d(2) =
+    ⟨½, ½⟩ 
+    
+
+= 3″>
+
+    d(n) =
+    ⟨d(n−1) / 2, 0⟩ +
+    ⟨0, d(n−1) / 2⟩ 
+    
+
+    for n ≥ 3.
+    
+
+
+
+If you compute these values, you’ll see that the results are
+awfully familiar.
+I’ve pulled out the common denominator to avoid the ugly fractions.
+
+
+
+
+    1 1
+    
+
+    entire row divided by 2
+    
+
+
+
+    1 2 1
+    
+
+    entire row divided by 4
+    
+
+
+
+    1 3 3 1
+    
+
+    entire row divided by 8
+    
+
+
+
+    1 4 6 4 1
+    
+
+    entire row divided by 16
+    
+
+
+
+    1 5 10 10 5 1  
+    
+
+    entire row divided by 32
+    
+
+
+
+Yup, it’s Pascal’s Triangle.
+
+
+Notice that the sum across the row equals the amount we are dividing by,
+so that the sum of the row is always 1.
+(This is easy to see from the recurrence relation, since the base
+case establishes the property that the sum of the coordinates is 1,
+and the recurrence preserves it.)
+
+
+This means that
+we can calculate the coefficients of
+d(n)
+for any value of
+n directly,
+without having to calculate any of coefficients for smaller values
+of
+n.
+The coefficients are just row
+n of Pascal’s triangle,
+
+which we know how to compute in
+O(n) time.
+
+
+Now we can also interpret the extra term we removed at the even steps.
+That term of the recurrence
+simulates adding a unit of chemical to the solution
+at every other time step,
+half a unit at the left edge and half at the right edge.
+And we can calculate these directly in the same way that
+we calculated the diffusion coefficients,
+since they basically are the diffusion coefficients,
+just with a time and location adjustment.
+
+
+I pulled a fast one here.
+Maybe you didn’t pick up on it:
+I’m assuming that the two parts of the recurrence
+unrelated to the diffusion behavior
+(the base condition and the extra term at the even steps)
+are independent and can simply be added together.
+You can show this by noting that given the generalized recurrence
+
+
+
+
+    fG(2, k)
+    = G(2, k)
+    
+
+
+
+    fG(n, k)
+    =
+    G(n, k)
+    +
+    ⟨fG(n−1, k + 1) / 2, 0⟩ +
+    ⟨0, fG(n−1, k + 1) / 2⟩
+    for n ≥ 3.
+    
+
+
+
+then
+
+fG+H
+=
+fG +
+fH.
+(As before, induct on the recurrence relations.)
+Therefore, we can solve each of the pieces separately
+and just add the results together.
+
+
+If I had the time and inclination,
+I could work out the solution for
+
+
+
+
+C(n, i) +
+Σk even, 2 < k ≤ n
+C(k, i) / 2k
+    
+
+
+
+or something similar to that.
+Like I said, I ran out of time and inclination.
+But if I could come up with an efficient way to compute that
+value for all values of
+i
+for fixed
+n
+(and I believe there is, I’m just too lazy to work it out),
+then I would have an
+O(n) solution
+to the original recurrence.
+
+
+(Okay, so the “If I had the time” bit is a cop-out, but
+I sort of lost interest in the problem.)
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

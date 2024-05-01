@@ -1,0 +1,149 @@
+
+
+
+	
+        Cancelling the INamespace­Walk::Walk operation a little faster          Raymond Chen        
+            
+            November 10th, 20170 0
+		
+        We saw last time that you can stop a INamespace­Walk::Walk operation by returning a COM error code from the Enter­Folder or Found­Item callback. However, that may not be fast enough. 
+I noted some time ago that if you’re going to enumerate the contents of a directory, you’d best do it all at once. And that’s what INamespace­Walk::Walk does. After it enters a directory, it enumerates the whole thing at one shot, and then (optionally) sorts it, and then calls the Found­Item method for each item that was found. 
+If you happen to enter a large directory, then the “enumerate the whole thing at one shot” step can take a while. But there’s a way to sneak in during the enumeration phase and cancel the operation: Implement the IAction­Progress interface on your INamespace­Walk­CB object. Note that this works only if you do not pass the NSWF_SHOW_PROGRESS flag. If you pass the NSWF_SHOW_PROGRESS flag, then the progress dialog’s Cancel button controls the cancellation. 
+Assuming you don’t pass the NSWF_SHOW_PROGRESS flag, the INamespace­Walk::Walk method will call IAction­Progress::Begin to get the party started, and IAction­Progress::End when it’s all over. In between, it will call IAction­Progress::QueryCancel. If your IAction­Progress::QueryCancel method returns *pfCancelled = TRUE, then the INamespace­Walk::Walk operation will abandon the enumeration, unwind all the entered folders with Leave­Folder, and then return HRESULT_FROM_WIN32(ERROR_CANCELLED). 
+Let’s use this technique to cancel the INamespace­Walk::Walk operation a bit more quickly. Make the following changes to the program we had last time: 
+
+#define STRICT
+#include <windows.h>
+#include <shlobj.h>
+#include <wrl/client.h>
+#include <wrl/implements.h>
+#include <stdio.h> // Horrors! Mixing stdio and C++!
+
+namespace wrl = Microsoft::WRL;
+
+class WalkCallback : public wrl::RuntimeClass<
+  wrl::RuntimeClassFlags<wrl::ClassicCom>,
+  INamespaceWalkCB,
+  IActionProgress> // New interface!
+{
+public:
+  // INamespaceWalkCB
+  IFACEMETHODIMP FoundItem(IShellFolder *,
+   PCUITEMID_CHILD) override
+   { m_itemCount++; return TimeoutStatus(); }
+
+  IFACEMETHODIMP EnterFolder(IShellFolder *,
+   PCUITEMID_CHILD) override
+   { m_folderCount++; return TimeoutStatus(); }
+
+  IFACEMETHODIMP LeaveFolder(IShellFolder *,
+   PCUITEMID_CHILD) override { return S_OK; }
+
+  IFACEMETHODIMP InitializeProgressDialog(PWSTR *ppszTitle,
+    PWSTR *ppszCancel) override
+    { *ppszTitle = nullptr; *ppszCancel = nullptr;
+      return E_NOTIMPL; }
+
+  // IActionProgress - new interface!
+  IFACEMETHODIMP Begin(SPACTION, SPBEGINF) override
+  { return S_OK; }
+
+  IFACEMETHODIMP UpdateProgress(ULONGLONG, ULONGLONG) override
+  { return S_OK; }
+
+  IFACEMETHODIMP UpdateText(SPTEXT, LPCWSTR, BOOL) override
+  { return S_OK; }
+
+  IFACEMETHODIMP QueryCancel(BOOL *pfCancelled) override
+  { *pfCancelled = IsTimedOut(); return S_OK; }
+
+  IFACEMETHODIMP ResetCancel() override { return S_OK; }
+  IFACEMETHODIMP End() override { return S_OK; }
+
+  int ItemCount() const { return m_itemCount; }
+  int FolderCount() const { return m_folderCount; }
+
+private:
+  bool IsTimedOut()
+    { return GetTickCount() - m_startTime > 1000; }
+
+  HRESULT TimeoutStatus()
+    { return IsTimedOut() ?
+      HRESULT_FROM_WIN32(ERROR_CANCELLED) : S_OK; }
+
+  DWORD m_startTime = GetTickCount();
+  int m_itemCount = 0;
+  int m_folderCount = 0;
+};
+
+int __cdecl wmain(int argc, PWSTR argv[])
+{
+  CCoInitialize coinit;
+
+  wrl::ComPtr<INamespaceWalk> walk;
+  CoCreateInstance(CLSID_NamespaceWalker, nullptr,
+    CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&walk));
+
+  wrl::ComPtr<IShellItem> root;
+  SHCreateItemFromParsingName(argv[1], nullptr,
+    IID_PPV_ARGS(&root));
+
+  auto callback = wrl::Make<WalkCallback>();
+
+  HRESULT hr = walk->Walk(root.Get(), NSWF_DEFAULT,
+    100, callback.Get());
+
+  printf("Walk completed with result 0x%08x\n", hr);
+  printf("Found %d items and %d folders\n",
+   callback->ItemCount(), callback->FolderCount());
+
+  return 0;
+}
+
+All we did was add IAction­Progress support to our callback object. When asked if we want to cancel the operation, we report whether the operation has timed out. 
+Adding this extra support will not be noticeable when enumerating relatively small directories from relatively fast media.
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

@@ -1,0 +1,66 @@
+
+
+
+	
+        The case of the Uuid­Create­Sequential that didn’t use the MAC address          Raymond Chen        
+            
+            November 20th, 20191 0
+		
+        A customer reported that the Uuid­Create­Sequential function was generating UUIDs that did not place the network card’s MAC address in the final bytes of the UUID.
+Sequentially-generated UUIDs are so-called Version 1 UUIDs: A combination of a timestamp and a MAC address. The timestamp is incremented to produce sequential UUIDs.
+So why wasn’t the MAC address being used in the UUID? Instead, the high bit of the first byte of the MAC address was set, indicating that this was a pseudo-random MAC address rather than a real one. (In real MAC addresses, the first bit is zero, indicating a unicast destination.)
+It took a lot of investigation, but the team finally got to the root of the problem.
+Their systems had a virtual network card, and the driver for the virtual network card generated a MAC address where the Organizationally Unique Identifier (OUI) was FFFFFF.
+Uh, oh.
+Remember I said that in real MAC addresses, the first bit is zero, indicating a unicast destination. But their MAC address had the first bit (indeed the first 24 bits) all set!
+When the system gets the MAC address for the purpose of creating sequential UUIDs, it ignores network adapters who report a OUI of FFFFFF, on the assumption that they are fake network adapters and therefore do not carry a unique MAC address.
+And if all of the network adapters are fake, then the UUID generation algorithm falls back to the case where there is no network adapter at all and generates a pseudo-random one. And sets the bit that says “This is a fake MAC address.”
+When told that their virtual network card driver was setting the OUI to FFFFFF, they answered, “Is that a problem? Should we be using something else?”
+It’s actually a good thing that they accidentally chose a blatantly invalid OUI for their fake MAC address, because it makes things as clear as possible (within the expressive range of 48-bit MAC addresses) that the MAC address is fake and should not be relied upon for global uniqueness. The Uuid­Create­Sequential function is correct to ignore that artificial MAC address and fall back on a pseudo-randomly-generated one.
+The problem was not in the Uuid­Create­Sequential function, nor was it in their virtual network card. It was in their expectations! If you have a fake network card, then its MAC cannot be used to generate sequential GUIDs.
+Bonus chatter: The  kdnet feature also sets up a virtual network card with a vendor ID of all F’s. So if you enabled kdnet, and you don’t have a real network card, then you may encounter this problem, too.
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Other
+	
+

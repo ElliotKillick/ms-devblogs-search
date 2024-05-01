@@ -1,0 +1,135 @@
+
+
+
+	
+        The dialog manager, part 7: More subtleties in message loops          Raymond Chen        
+            
+            April 6th, 20050 0
+		
+        
+
+Last time, we solved the problem with
+the EndManualModalDialog function
+by posting a harmless message.
+Today, we’re going to solve the problem in an entirely
+different way.
+
+
+The idea here is to make sure the modal message loop
+regains control, even if all that happened were incoming
+sent messages, so that it can detect that the fEnded
+flag is set and break out of the modal loop.
+
+
+Instead of changing
+the EndManualModalDialog function,
+we will change the modal message loop.
+
+
+int DoModal(HWND hwnd)
+{
+ DIALOGSTATE ds = { 0 };
+ HWND hdlg = CreateDialogParam(g_hinst, MAKEINTRESOURCE(1),
+             hwnd, DlgProc, reinterpret_cast<LPARAM>(&ds));
+ if (!hdlg) {
+  return -1;
+ }
+ EnableWindow(hwnd, FALSE);
+ MSG msg;
+ msg.message = WM_NULL; // anything that isn't WM_QUIT
+ while (!ds.fEnded) {
+  if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+   if (msg.message == WM_QUIT) { /*  fixed 8am */
+    break;
+   } else if (!IsDialogMessage(hdlg, &msg)) {
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
+   } /* fixed 10am */
+  } else if (!ds.fEnded) {
+   WaitMessage();
+  }
+ }
+ if (msg.message == WM_QUIT) {
+  PostQuitMessage((int)msg.wParam);
+ }
+ EnableWindow(hwnd, TRUE);
+ DestroyWindow(hdlg);
+ return ds.iResult;
+}
+
+
+We changed the call to GetMessage
+into a call to
+
+the PeekMessage function,
+asking to remove the peeked message if any.
+Like GetMessage,
+this delivers any incoming sent messages,
+then checks if there are any posted messages in the queue.
+The difference is that whereas GetMessage
+keeps waiting if there are no posted message,
+PeekMessage returns and tells you that there
+were no posted messages.
+
+
+That’s the control we want.
+If PeekMessage says that it couldn’t
+find a posted message, we check our fEnded
+flag once again, in case an incoming sent message
+set the fEnded flag.
+If not, then we call
+
+the WaitMessage function
+to wait until there is something to do
+(either an incoming sent message or a posted message).
+
+
+Exercise: If the whole point was to regain control
+after sent messages are delivered, why isn’t there a test
+of the fEnded flag immediately after
+DispatchMessage returns?
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

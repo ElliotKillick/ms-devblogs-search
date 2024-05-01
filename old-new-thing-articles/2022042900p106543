@@ -1,0 +1,165 @@
+
+
+
+	
+        The case of the failed exchange of the vtable slot          Raymond Chen        
+            
+            April 29th, 20224 0
+		
+        A customer found that after installing update KB4580346, Explorer went into a crash loop at logon. They traced it back to one of the third-party programs that had been installed, but wanted to understand what the problem was and when they would expect to see a fix. The third-party program worked fine prior to the installation of the update, and they wanted to know when Microsoft would issue a fix for this regression.
+The crash was on this instruction:
+contoso!DllUnregisterServer+0x7efb:
+00007fff`f60ea68b 488708          xchg    rcx,qword ptr [rax] ds:00007fff`fb4b5000
+
+The memory in question is valid but read-only, which is why the exchange operation failed with an access violation.
+The address of the memory being modified by this exchange instruction looks suspicious: It’s 00007fff`xxxxxxxx, which is way up high, a space typically used by Address Space Layout Randomization (ASLR) to load DLLs. And a closer inspection shows that what they are trying to exchange is a function pointer in the virtual function table of an undocumented virtual method.
+This shell extension is trying to detour the operating system, and it failed. (Note that Windows does not support apps detouring the operating system. This shell extension has exited into unsupported territory.)
+Another interesting detail is that the faulting address is right on a page boundary. I suspected that what happened is that the operating system updated shifted the location of the virtual function table slightly, so that it straddled a page boundary, and the detour code didn’t take that into account.
+A study of the code leading up to this point revealed that it is part of a larger function that goes like this:
+BOOL ReplaceVtableEntry(
+    FARPROC* vtable,
+    int index,
+    FARPROC replacement,
+    FARPROC* previousFunction)
+{
+    DWORD previousProtection = 0;
+
+    // Unprotect the vtable entry
+    if (!VirtualProtect(vtable, index * sizeof(FARPROC),
+                        PAGE_EXECUTE_READWRITE, &previousProtection))
+    {
+        return FALSE;
+    }
+
+    // Swap in the new function (optionally returning the old function)
+    if (previousFunction)
+    {
+        *previousFunction = _InterlockedExchangePointer(&vtable[index], replacement);
+    }
+    else
+    {
+        _InterlockedExchangePointer(&vtable[index], replacement);
+    }
+
+    // Restore the vtable entry
+    return VirtualProtect(vtable, index * sizeof(FARPROC),
+                          previousProtection, &previousProtection);
+}
+
+The helper function’s job is to patch a virtual function table given a pointer to the table, an index indicating which function to replace, and information about what to replace it with and what to do with the previous value.
+It starts by unprotecting the first index functions in the virtual function table, then exchanging the value, and then restoring the original protection.
+The problem is that if you unprotect the first index entries in the virtual function table, you actually unprotect everything up to but not including the function you wanted.
+
+
+
+ 
+vtable
+
+
+0 →
+fptr
+ 
+ 
+unprotected
+
+
+1 →
+fptr
+
+
+ 
+⋮
+
+
+index − 1 →
+fptr
+
+
+index →
+fptr
+ 
+ 
+still protected
+
+
+
+They unprotected everything in the vtable that they didn’t care about, and stopped just before they unprotected the thing that they did care about. They got away with this until now becuse the entries at index − 1 and index happened to be on the same page, so unprotecting the index − 1’th entry managed to unprotect the index‘th entry since protection is done at the page level.
+And then, by some twist of fate, the virtual function table got placed at exactly the spot that would trigger this bug: The page boundary split the index − 1’th entry and index‘th entry onto separate pages.
+The function went and unprotected the wrong memory. It should be unprotecting the variable it wants to modify:
+BOOL ReplaceVtableEntry(
+    FARPROC* vtable,
+    int index,
+    FARPROC replacement,
+    FARPROC* previousFunction)
+{
+    DWORD previousProtection = 0;
+
+    // Unprotect the vtable entry
+    if (!VirtualProtect(vtable + index, sizeof(FARPROC),
+                        PAGE_EXECUTE_READWRITE, &previousProtection))
+    {
+        return FALSE;
+    }
+
+    // Swap in the new function (optionally returning the old function)
+    if (previousFunction)
+    {
+        *previousFunction = _InterlockedExchangePointer(&vtable[index], replacement);
+    }
+    else
+    {
+        _InterlockedExchangePointer(&vtable[index], replacement);
+    }
+
+    // Restore the vtable entry
+    return VirtualProtect(vtable + index, sizeof(FARPROC),
+                          previousProtection, &previousProtection);
+}
+
+This also addresses a different defect in the original code: If the unprotected region crosses a page boundary, then the Virtual­Protect function returns the previous protection of the first page in the region. The previous protection of the second and subsequent pages is lost. If your goal is to restore everything to the way you found it, you should make sure to change the protection of only one page at a time.
+Of course, the real solution is to stop patching the operating system.
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

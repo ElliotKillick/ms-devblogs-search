@@ -1,0 +1,144 @@
+
+
+
+	
+        A comparison of various implementations of the Windows Runtime IMemory­Buffer          Raymond Chen        
+            
+            January 29th, 20240 1
+		
+        In my studies of the IMemory­Buffer interface, I found three implementations of that interface in the Windows Runtime.
+
+Windows.Foundation.MemoryBuffer, obtained from Buffer.Create­Memory­Buffer­Over­IBuffer().
+Windows.Graphics.Imaging.BitmapBuffer, obtained from Software­Bitmap.Lock­Buffer().
+Unnamed class obtained from PerceptionFrame.FrameData.
+
+ We also wrote our own fourth implementation, which we called Custom­Memory­Buffer, that lets you turn any block of memory into a Memory­Buffer.
+All four of them behave differently. Let’s compare.
+
+
+
+ 
+Memory­Buffer
+Bitmap­Buffer
+Frame­Data
+Custom­Memory­Buffer
+
+
+Thread-safe?
+No
+Yes
+Yes
+Yes
+
+
+IMemoryBuffer supports IMemoryBufferByteAccess?
+No
+No
+Yes
+Yes
+
+
+CreateReference after Close
+Empty
+
+
+Empty references raise Closed event?
+Yes
+No
+No
+Yes
+
+
+Raises Closed event automatically when released?
+Yes
+No
+Yes
+Yes
+
+
+Can extend lifetime during Closed event handler
+No
+Yes
+No
+Yes
+
+
+Buffer valid during Closed event?
+Yes
+No
+No
+Yes
+
+
+Can call methods during Closed event
+Yes
+Yes
+No
+Yes
+
+
+Buffer of empty or closed reference
+pointer = nullptr and size = 0
+
+
+Memory freed when…
+IMemory­Buffer and all IMemory­Buffer­References have been closed or destructed
+
+
+
+All happy memory buffers look alike.  Each unhappy memory buffer is unhappy in its own way.
+The standard Memory­Buffer has the problem of not being thread-safe. If you call Close at the same time as Create­Reference, you may experience use-after-free bugs. And if you call Close twice simultaneously, you can add to your woes null pointer crashes, over-release of the underlying IBuffer, and double-raising of the the Closed event, depending on exactly how the race plays out.
+All four implementations agree that if you call Create­Reference on a closed IMemory­Buffer, you get an “empty reference”. An empty reference is one that protects no memory. If you ask for the buffer of an empty reference, you get a null pointer and a size of zero.
+In all of the implementations except Frame­Data, empty references raise the Closed event.
+The Bitmap­Buffer‘s memory buffer reference raises the Closed event only on an explicit call to Closed. The others raise the Closed event either on explicit closure or when the last reference is released. This means that Bitmap­Buffer reference’s Closed event is even more unreliable than the Closed event already is by its nature.
+The Memory­Buffer and Frame­Data ignore attempts by the Closed event handler to extend the reference’s lifetime. The biggest consequence of this is that the Closed event in those implementations  will corrupt memory if consumed from a GC language. The Bitmap­Buffer sneakily passes this test because it is masked by the other defect of simply not raising the Closed event in the dangerous scenario in the first place.
+The Bitmap­Buffer and Frame­Data raise the Closed event after freeing the memory, which means that the event is useless for triggering cleanup: Since you are told that the memory has been freed only after it happened, all you’re really learning is that “Oops, you already corrupted memory.”
+The Frame­Data has the bonus insult of passing you an IMemory­Buffer­Reference in the Closed handler that cannot be used! Any attempt to obtain the buffer’s capacity or pointer will hang. (That’s because it raises the Closed event while still holding its internal lock. Calling to outside code while holding a lock is a bad idea for reasons like this.)
+Our Custom­Memory­Buffer tries to avoid all of these little defects.
+But what if you are forced to use one of the other three implementations of IMemory­Buffer, or some other fifth implementation from an external source that isn’t even on the list. Seeing as the first three attempts at implementing IMemory­Buffer all failed in different ways, what confidence do you have that an unknown implementation will be well-behaved?
+We’ll solve this problem next time. The answer is right under our nose.
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

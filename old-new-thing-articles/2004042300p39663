@@ -1,0 +1,159 @@
+
+
+
+	
+        How to retrieve text under the cursor (mouse pointer)          Raymond Chen        
+            
+            April 23rd, 20040 0
+		
+        
+
+Microsoft Active Accessibilty is the technology that
+exposes information about objects on the screen to accessibility
+aids such as screen readers.
+But that doesn’t mean that only screen readers can use it.
+
+
+Here’s a program that illustrates the use of Active Accessibility
+at the most rudimentary level: Reading text.  There’s much more to
+Active Accessibility than this. You can navigate the objects on the
+screen, read various properties, even invoke commands on them,
+all programmatically.
+
+
+Start with our
+
+scratch program and change these two functions:
+
+
+BOOL
+OnCreate(HWND hwnd, LPCREATESTRUCT lpcs)
+{
+  SetTimer(hwnd, 1, 1000, RecalcText);
+  return TRUE;
+}
+void
+PaintContent(HWND hwnd, PAINTSTRUCT *pps)
+{
+  if (g_pszText) {
+      RECT rc;
+      GetClientRect(hwnd, &rc);
+      DrawText(pps->hdc, g_pszText, lstrlen(g_pszText),
+               &rc, DT_NOPREFIX | DT_WORDBREAK);
+  }
+}
+
+
+Of course, the fun part is the function RecalcText,
+which retrieves the text from beneath the cursor:
+
+
+#include <oleacc.h>
+POINT g_pt;
+LPTSTR g_pszText;
+void CALLBACK RecalcText(HWND hwnd, UINT, UINT_PTR, DWORD)
+{
+  POINT pt;
+  if (GetCursorPos(&pt) &&
+    (pt.x != g_pt.x || pt.y != g_pt.y)) {
+    g_pt = pt;
+    IAccessible *pacc;
+    VARIANT vtChild;
+    if (SUCCEEDED(AccessibleObjectFromPoint(pt, &pacc, &vtChild))) {
+      BSTR bsName = NULL;
+      BSTR bsValue = NULL;
+      pacc->get_accName(vtChild, &bsName);
+      pacc->get_accValue(vtChild, &bsValue);
+      LPTSTR pszResult;
+      DWORD_PTR args[2] = { (DWORD_PTR)(bsName ? bsName : L""),
+                            (DWORD_PTR)(bsValue ? bsValue : L"") };
+      if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+                        FORMAT_MESSAGE_FROM_STRING |
+                        FORMAT_MESSAGE_ARGUMENT_ARRAY,
+                        TEXT("Name: %1!ws!\r\n\r\nValue: %2!ws!"),
+                        0, 0, (LPTSTR)&pszResult, 0, (va_list*)args)) {
+        LocalFree(g_pszText);
+        g_pszText = pszResult;
+        InvalidateRect(hwnd, NULL, TRUE);
+      }
+      SysFreeString(bsName);
+      SysFreeString(bsValue);
+      VariantClear(&vtChild);
+      pacc->Release();
+    }
+  }
+}
+
+
+Let’s take a look at this function.
+We start by grabbing the cursor position
+and seeing if it changed since the last time we checked.
+If so, then we ask
+AccessibleObjectFromPoint to identify the object
+at those coordinates and give us an IAccessible
+pointer plus a child identifier.  These two pieces of information
+together represent the object under the cursor.
+
+
+Now it’s a simple matter of asking for
+the name (get_accName)
+and value (get_accValue)
+of the object and format it nicely.
+
+
+Note that we handled the NULL case of the BSTR in accordance with
+
+Eric’s Complete Guide to BSTR Semantics.
+
+
+For more information about accessibility,
+check out
+Sara Ford’s WebLog,
+in particular the bit titled
+
+What is Assistive Technology Compatibility.
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

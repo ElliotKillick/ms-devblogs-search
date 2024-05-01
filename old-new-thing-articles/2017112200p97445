@@ -1,0 +1,138 @@
+
+
+
+	
+        What is the documentation for SetParent trying to tell me about synchronizing the UI state?          Raymond Chen        
+            
+            November 22nd, 20170 0
+		
+        The documentation for the Set­Parent function says 
+When you change the parent of a window, you should synchronize the UISTATE of both windows. For more information, see WM_CHANGE­UI­STATE and WM_UPDATE­UI­STATE. 
+What does that mean? 
+Recall how the WM_UPDATE­UI­STATE and WM_CHANGE­UI­STATE messages work. When keyboard indicators need to be shown or hidden, the control that initiates the change sends itself a WM_UPDATE­UI­STATE message. This message propages up the window tree. When it reaches the root of the tree, the message converts to a WM_CHANGE­UI­STATE message and propagates down the tree. 
+There is an optimization here: If the desired keyboard state is already present, then message propagation stops, because there’s no point telling people to change something to what it already is. 
+However, this optimization assumes that every window in the tree has the same state to begin with. 
+Let’s see what happens if you violate this assumption. 
+
+
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+ 
+     AhideFocus=0hideAccel=0
+ 
+
+
+ 
+ 
+ 
+ 
+
+
+ 
+ 
+ 
+
+
+     BhideFocus=0hideAccel=0
+ 
+     ChideFocus=1hideAccel=1
+
+
+Observe that keyboard indicators are shown in A and B, but they are hidden in C. This is not a valid window configuration, but let’s run with it and see where it takes us. 
+Suppose focus is on C and you tap the Alt key to show keyboard accelerators. 
+Window C sends itself a WM_UPDATE­UI­STATE to request that keyboard accelerators be turned on. This message propagates up the tree to window A. Window A then says, “You woke me up from my nap for this? Why are you asking to show accelerators? Accelerators are already visible! Stop wasting my time.” And the message processing stops. 
+
+
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+ 
+
+😴
+     AhideFocus=0hideAccel=0
+ 
+
+
+
+ 
+ 
+ 
+ 
+
+
+ 
+ 
+ 
+
+
+     BhideFocus=0hideAccel=0
+ 
+
+😞
+     ChideFocus=1hideAccel=1
+
+
+Result: C still doesn’t get any keyboard accelerators. C is a sad window. C makes an appointment with a therapist. 
+The remark in the documentation is trying to tell you that if you are moving windows between parents, and the new parent has a different UI state from its adopted child, then you have two problems: 
+
+The UI state is inconsistent within the top-level window,     so your window looks weird.
+The UI state will not be properly updated,     so your window acts weird.
+
+Okay, so you get it. It’s important to get the two UI states in sync. But how do you do that? We’ll start looking into that next time. 
+Bonus chatter: That section of the documentation was written by someone who understands the window manager so deeply that they assume everybody else understands it to the same degree, expecting that “synchronize the UI state” is something the reader would comprehend immediately. (And as we’ll see next time, somebody who has never actually tried to synchronize the UI states of two windows, because if they had tried, they would have realized that accomplishing the task is harder than an offhand remark would suggest.) 
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

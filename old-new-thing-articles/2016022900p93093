@@ -1,0 +1,85 @@
+
+
+
+	
+        How can I get the original shortcut target path with environment variables unexpanded?          Raymond Chen        
+            
+            February 29th, 20160 0
+		
+        A customer wanted to be able to get the target of a shortcut with environment variables unexpanded. The IShellLink::Get­Path method will expand environment variables. 
+The way to get the unexpanded target path is to go for the EXP_SZ_LINK data in the shell link data list. We briefly encountered the shell link data list a while back. Now we’ll dig in a little more. 
+
+#include <windows.h>
+#include <shlobj.h>
+#include <stdio.h> // Horrors! Mixing stdio and C++!
+#include <atlbase.h>
+#include <atlalloc.h>
+
+int __cdecl wmain(int argc, wchar_t**argv)
+{
+ CCoInitialize init;
+
+ CComPtr<IShellLink> lnk;
+ CoCreateInstance(CLSID_ShellLink, 0,
+                  CLSCTX_ALL, IID_PPV_ARGS(&lnk));
+ CComQIPtr<IPersistFile> pf(lnk);
+ pf->Load(argv[1], STGM_READ);
+
+ CComQIPtr<IShellLinkDataList> list(lnk);
+ DWORD flags;
+ list->GetFlags(&flags);
+ if (flags & SLDF_HAS_EXP_SZ) {
+  CHeapPtr<void, CLocalAllocator> rawData;
+  list->CopyDataBlock(EXP_SZ_LINK_SIG, &rawData);
+  auto linkData = reinterpret_cast<EXP_SZ_LINK *>(static_cast<void *>(rawData));
+  printf("Unexpanded target = %ls\n", linkData->swzTarget);
+ }
+ return 0;
+}
+
+After loading the shortcut file, we ask the IShell­Link­Data­List to inspect the shortcut flags. If the SLDF_HAS_EXP_SZ flag is set, then the path to the target contains an environment variable reference. To get the original unexpanded path, ask for the EXP_SZ_LINK_SIG data block. That returns a data block in the form of a EXP_SZ_LINK structure, from which you can extract the unexpanded paths. 
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

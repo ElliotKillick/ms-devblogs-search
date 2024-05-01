@@ -1,0 +1,87 @@
+
+
+
+	
+        Why won’t C++/WinRT let me co_await a CoreDispatcher or DispatcherQueue?          Raymond Chen        
+            
+            November 16th, 20220 0
+		
+        A customer was trying to use a Core­Dispatcher to switch threads, but they couldn’t get it to work:
+winrt::fire_and_forget MyPage::OnExternalEvent()
+{
+    auto lifetime = get_strong();
+
+    // this doesn't compile
+    co_await Dispatcher();
+
+    // neither does this
+    co_await winrt::resume_foreground(Dispatcher());
+
+    ...
+}
+
+Performing a direct co_await on a Core­Dispatcher or Dispatcher­Queue  appears to be commonplace, but for some reason, this customer couldn’t get it to work:
+error C2338: Not an awaitable type (compiling source file {sourceFile}.cpp)
+see reference to function template instantiation 'decltype(auto) winrt::impl::get_awaiter<T>(T &&) noexcept' being compiled
+with
+[
+    T=winrt::Windows::UI::Core::CoreDispatcher
+] (compiling source file {sourceFile}.cpp)
+
+If they used the resume_foreground helper function, they got
+error C3861: 'resume_foreground': identifier not found
+
+That second error message is a very strong clue that some definition is missing.
+The problem is that they broke one of the rules of C++/WinRT: If you want to use a Windows Runtime object, you must include the header file for the namespace that contains the object.
+In this case, they failed to #include <winrt/Windows.UI.Core.h>. It is the namespace header that defines the operations that can be performed on the object. In the case of Core­Dispatcher, the namespace header defines is what provides co_await and resume_foreground support.
+Similar logic applies to the case of co_await‘ing a Dispatcher­Queue.
+The customer confirmed that including the required header file solved the problem.
+Bonus chatter: Another possibility is that you get
+error C2664: 'winrt::resume_foreground::awaitable winrt::resume_foreground(const winrt::Windows::System::DispatcherQueue &,const winrt::Windows::System::DispatcherQueuePriority) noexcept': cannot convert argument 1 from 'winrt::Windows::UI::Core::CoreDispatcher' to 'const winrt::Windows::System::DispatcherQueue &'
+
+This is what happens when you include the header file for some other dispatcher, but you forgot to include the header file for the dispatcher you actually want to use. The compiler sees the resume_foreground function, but the overload that you want isn’t there because you forgot to include the header file that provides it.
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

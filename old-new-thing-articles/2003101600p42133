@@ -1,0 +1,138 @@
+
+
+
+	
+        Scrollbars redux: Part 12          Raymond Chen        
+            
+            October 16th, 20030 0
+		
+        
+        Reader Jeff Miller added Word-style scroll tips to our sample scrollbar program. Here’s
+        how he did it:
+    
+HWND g_hwndTT;              /* tooltip control */
+TOOLINFO g_ti;              /* tooltip info struct */
+BOOL g_fInScroll;           /* Scroll state */
+void CancelScrollTip()
+{
+    if (g_fInScroll) {
+        g_fInScroll = FALSE;
+        SendMessage(g_hwndTT, TTM_TRACKACTIVATE,
+                    FALSE, (LPARAM)&g_ti);
+    }
+}
+void UpdateScrollTip()
+{
+    if (!g_hwndTT) return;
+    if (!g_fInScroll) {
+        g_fInScroll = TRUE;
+        DWORD dwPos = GetMessagePos();
+        SendMessage(g_hwndTT, TTM_TRACKPOSITION, 0,
+                    MAKELPARAM(GET_X_LPARAM(dwPos) +
+                               GetSystemMetrics(SM_CXVSCROLL)
+                               GET_Y_LPARAM(dwPos)));
+        SendMessage(g_hwndTT, TTM_TRACKACTIVATE, TRUE,
+                    (LPARAM)&g_ti);
+    }
+    // Reset the text to LPSTR_TEXTCALLBACK so it will get
+    // re-fetched
+    SendMessage(g_hwndTT, TTM_SETTOOLINFO, 0,
+                (LPARAM)&g_ti);
+}
+LRESULT
+OnNotify(HWND hwnd, int id, LPNMHDR pnm)
+{
+    switch (pnm->code) {
+    case TTN_GETDISPINFO:
+        {
+            NMTTDISPINFO *pnmtdi = (NMTTDISPINFO*)pnm;
+            wnsprintf(pnmtdi->lpszText, 80,
+                      TEXT("Line: %d"), g_yOrigin);
+        }
+        break;
+    }
+    return 0;
+}
+// change case statement in OnVscroll:
+    case SB_THUMBTRACK:     ScrollTo(hwnd, GetTrackPos(hwnd, SB_VERT));
+                            UpdateScrollTip(); break;
+// add case statement to OnVscroll:
+    case SB_ENDSCROLL:      CancelScrollTip(); break;
+// add to OnCreate
+    /* Create and initialize the tooltip */
+    g_hwndTT = CreateWindow(TOOLTIPS_CLASS, NULL,
+             WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
+             CW_USEDEFAULT, CW_USEDEFAULT,
+             CW_USEDEFAULT, CW_USEDEFAULT,
+             hwnd, NULL, NULL, NULL);
+    if (g_hwndTT) {
+        g_ti.cbSize = sizeof(g_ti);
+        g_ti.uFlags = TTF_TRACK;
+        g_ti.hwnd = hwnd;
+        g_ti.lpszText = LPSTR_TEXTCALLBACK;
+        SendMessage(g_hwndTT, TTM_ADDTOOL, 0, (LPARAM)&g_ti);
+    }
+// add to WndProc
+    case WM_NOTIFY: return OnNotify(hwnd, (int)wParam,
+                                    (LPNMHDR)lParam);
+
+
+        A tracking tooltip is used to display the scroll tip because we don’t want the tooltip
+        to do automatic positioning or automatic show/hide.
+    
+
+        When a tracking scroll occurs (SB_THUMBTRACK), we update the scroll tip,
+        displaying it if necessary. When the tracking scroll ends (SB_ENDSCROLL),
+        we remove the tip.
+    
+
+        The above code mimics the Word XP style, where the tooltip appears near the original
+        thumb position but does not follow the thumb as the user scrolls. If you prefer that
+        the tooltip follow the thumb, remove the if (!g_fInScroll) test from
+        the UpdateScrollTip function.
+    
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

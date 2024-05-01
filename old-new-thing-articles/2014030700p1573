@@ -1,0 +1,148 @@
+
+
+
+	
+        Converting from a UTC-based SYSTEMTIME directly to a local-time-based SYSTEMTIME          Raymond Chen        
+            
+            March 7th, 20140 0
+		
+        Last year, I presented this commutative diagram
+
+   A 2-by-2 grid of boxes.   The top row is labeled FILE­TIME; the bottom row is labeled   SYSTEM­TIME.   The first column is labeled UTC; the second column is labeled Local.   The upper left box   is labeled Get­System­Time­As­File­Time.   There is an outgoing arrow to the right   labeled   File­Time­To­Local­File­Time leading to the box in the   second column labeled None.   There is an outgoing arrow downward labeled   File­Time­To­System­Time   leading to the box in the second row, first column,   labeled Get­System­Time.   From the box in the upper right corner labeled None,   there is an outgoing arrow   downward labeled   File­Time­To­System­Time   leading to the box in the second row, second column,   labeled Get­Local­Time. 
+UTC
+Local
+FILE­TIME
+    Get­System­Time­As­File­Time
+    File­Time­To­Local­File­Time
+(None)
+    File­Time­To­System­Time
+    File­Time­To­System­Time
+SYSTEM­TIME
+    Get­System­Time
+    Get­Local­Time
+
+→
+↓
+↓
+
+
+ I claimed that  there was no function to complete the commutative diagram by connecting the bottom two boxes.
+ I was wrong, but I’m going to try to get off on a technicality.
+ You can connect the two boxes by calling System­Time­To­Tz­Specific­Local­Time with NULL as the time zone parameter, which means “Use the current time zone.”
+
+   The same diagram as above, but there is a new arrow connecting   Get­System­Time to   Get­Local­Time   labeled System­Time­To­Tz­Specific­Local­Time. 
+UTC
+Local
+FILE­TIME
+    Get­System­Time­As­File­Time
+    File­Time­To­Local­File­Time
+(None)
+    File­Time­To­System­Time
+    File­Time­To­System­Time
+SYSTEM­TIME
+    Get­System­Time
+     System­Time­To­Tz­Specific­Local­Time
+    Get­Local­Time
+
+→
+↓
+↓
+→
+
+
+ This works here because the time being converted always refers to the current time.
+ Here comes the technicality.
+ This technique doesn’t work in general because System­Time­To­Tz­Specific­Local­Time uses the time zone in effect at the time being converted, whereas the File­Time­To­Local­File­Time function uses the time zone in effect right now. Furthermore, it doesn’t take into account changes in daylight savings rules that  may have historically been different from the current set of rules. (Though this is easily repaired by switching to System­Time­To­Tz­Specific­Local­Time­Ex.) The trick works here because the time we are converting is right now.
+ In other words, the more general diagram does not commute. Instead, it looks more like this:
+
+   Same as before, but this time the boxes are unlabeled,   and the bottom right box is split in two.   The inbound arrow from the left goes to one box and the inbound arrow from the top   goes to another box.   The two halves of the split boxes are marked as not equal. 
+UTC
+Local
+FILE­TIME
+    
+    File­Time­To­Local­File­Time
+
+    File­Time­To­System­Time
+    File­Time­To­System­Time
+SYSTEM­TIME
+    
+     System­Time­To­Tz­Specific­Local­Time­Ex
+    
+     ≠    
+    
+
+→
+↓
+↓
+→
+
+
+ This is why the documentation for File­Time­To­Local­File­Time tells you that if you want to get from the upper left corner to the upper right corner while accounting for daylight saving time relative to the time being converted, then you need to take the long way around.
+ So what we have is not so much a commutative diagram as a something like covering space: If you start at any box and travel around the diagram, you won’t necessarily end up where you started. Let’s start at the upper left corner for the sake of example. 
+
+   Back to the four-box diagram, with empty boxes.   The arrows follow a clockwise path.   From the upper left, we go to the upper right via File­Time­To­Local­File­Time,   then to the bottom right via File­Time­To­System­Time,   then to the bottom left via Tz­Specific­Local­Time­To­System­Time­Ex,   then back to the upper left via Local­File­Time­To­File­Time. 
+UTC
+Local
+FILE­TIME
+    
+    File­Time­To­Local­File­Time
+
+    System­Time­To­File­Time
+    File­Time­To­System­Time
+SYSTEM­TIME
+    
+     Tz­Specific­Local­Time­To­System­Time
+    
+
+→
+↓
+↓
+→
+
+
+ When you return to the upper left box, you might end up somewhere else, probably an hour ahead of or behind where you started. Each time you take a trip around the diagram, you drift another hour further away. Well, until you hit another daylight saving time changeover point. 
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code Time
+	
+

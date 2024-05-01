@@ -1,0 +1,278 @@
+
+
+
+	
+        What is the point of FreeLibraryAndExitThread?          Raymond Chen        
+            
+            November 5th, 20130 0
+		
+        
+The Free­Library­And­Exit­Thread
+function seems pointless.
+I mean, all the function does is
+
+
+DECLSPEC_NORETURN
+void WINAPI FreeLibraryAndExitThread(
+    HMODULE hLibModule,
+    DWORD dwExitCode)
+{
+    FreeLibrary(hLibModule);
+    ExitThread(dwExitCode);
+}
+
+
+Who needs such a trivial function?
+If I wanted to do that, I could just write it myself.
+
+
+DWORD CALLBACK MyThreadProc(void *lpParameter)
+{
+    ... blah blah blah ...
+    // FreeLibraryAndExitThread(g_hinstSelf, 0);
+    FreeLibrary(g_hinstSelf);
+    ExitThread(0);
+}
+
+
+And then you discover that occasionally your program crashes.
+What’s going on?
+
+
+Let’s rewind and look at the original problem.
+
+
+Originally, you had code that did something like this:
+
+
+DWORD CALLBACK SomethingThreadProc(void *lpParameter)
+{
+ ... do something ...
+ return 0;
+}
+void DoSomethingInTheBackground()
+{
+ DWORD dwThreadId;
+ HANDLE hThread = CreateThread(nullptr, 0, SomethingThreadProc,
+                  nullptr, 0, &dwThreadId);
+ if (hThread) CloseHandle(hThread);
+}
+
+
+This worked great, until somebody did this to your DLL:
+
+
+HMODULE hmodDll = LoadLibrary(TEXT("awesome.dll"));
+if (hmodDll) {
+ auto pfn = reinterpret_cast<decltype(DoSomethingInTheBackground)*>
+            (GetProcAddress(hmodDll, "DoSomethingInTheBackground"));
+ if (pfn) pfn();
+ FreeLibrary(hmodDll);
+}
+
+
+This code fragment calls your
+Do­Something­In­The­Background
+function and then immediately unloads the DLL,
+presumably because all they wanted to do was call that one function.
+
+
+Now you have a problem:
+That
+Free­Library
+call frees your DLL,
+while your
+Something­Thread­Proc is still running!
+Result:
+A crash at an address where there is no code.
+Older debuggers reported this as a crash in 〈unknown〉;
+newer ones can dig into the recently-unloaded modules list
+and report it as a crash in
+awesome_unloaded.
+
+
+This is a very common class of error.
+When I helped out the application compatibility team
+
+by looking at crashes in third-party code,
+the majority of the crashes I looked at in Internet Explorer
+were of this sort,
+where a plug-in got unloaded while it still had a running thread.
+
+
+How do you prevent your DLL from being unloaded while you still
+have code running (or have registered callbacks)?
+You perform a bonus Load­Library on yourself,
+thereby bumping your DLL reference count by one.
+
+
+If you don’t need to support Windows 2000,
+you can use the new Get­Module­Handle­Ex function,
+which is much more convenient and probably a lot faster, too.
+
+
+BOOL IncrementDLLReferenceCount(HINSTANCE hinst)
+{
+ HMODULE hmod;
+ return GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                          reinterpret_cast<LPCTSTR>(hinst),
+                          &hmod);
+}
+
+
+Bumping the DLL reference count means that when the original person
+who called Load­Library finally calls
+Free­Library,
+your DLL will still remain in memory because the reference count
+has not yet dropped all the way to zero because you have taken
+a reference to the DLL yourself.
+
+
+When you unregister your callback or your background thread finishes,
+you call
+Free­Library to release your reference to the DLL,
+and if that’s the last reference, then the DLL will be unloaded.
+
+
+But wait, now we have a problem.
+When you call
+Free­Library to release your reference to the DLL,
+that call might end up unloading the code that is making the call.
+When the call returns, there is no more code there.
+This most commonly happens when you are calling
+Free­Library on yourself and that was the last reference.
+In rarer circumstances, it happens indirectly through a
+chain of final references.
+
+
+Let’s walk through that scenario again, since understanding it is central
+to solving the problem.
+
+
+Some application calls Load­Library on your DLL.
+    The reference count on your DLL is now 1.
+The application calls a function in your DLL that uses a background
+    thread.
+Your DLL prepares for the background thread by doing a
+    Get­Module­Handle­Ex on itself,
+    to avoid a premature unload.
+    The reference count on your DLL is now 2.
+Your DLL starts the background thread.
+The application decides that it doesn’t need your DLL any more,
+    so it calls Free­Library.
+    The reference count on your DLL is now 1.
+Your DLL background thread finishes its main work.
+    The thread procedure ends with the lines
+
+    FreeLibrary(g_hinstSelf);
+    return 0;
+
+The thread procedure calls
+    Free­Library(g_hinst­Self)
+    to drop its reference count.
+The
+    Free­Library function frees your DLL.
+The
+    Free­Library function returns to its caller,
+    namely your thread procedure.
+Crash, because your thread procedure was unloaded!
+
+
+This is why you need
+Free­Library­And­Exit­Thread:
+So that the return address of the Free­Library
+is not in code that’s being unloaded by the
+Free­Library itself.
+
+
+Change the last two lines of the thread procedure to
+Free­Library­AndExit­Thread(g_hinstSelf, 0);
+and watch what happens.
+The first five steps are the same, and then we take a turn:
+
+
+Your DLL background thread finishes its main work.
+    The thread procedure ends with a call to
+
+    FreeLibraryAndExitThread(g_hinstSelf, 0);
+
+The
+    Free­Library­And­Exit­Thread
+    function calls
+    Free­Library(g_hinst­Self).
+The
+    Free­Library function frees your DLL.
+The
+    Free­Library function returns to its caller,
+    which is not your thread procedure but rather the
+    Free­Library­And­Exit­Thread
+    function,
+    which was not unloaded.
+The
+    Free­Library­And­Exit­Thread
+    function calls Exit­Thread(0).
+The thread exits and no further code is executed.
+
+
+That’s why the
+Free­Library­And­Exit­Thread
+function exists:
+So you don’t pull the rug out from underneath yourself.
+Instead, you have somebody else pull the rug for you.
+
+
+This issue of keeping your DLL from unloading prematurely
+rears its head in several ways.
+We’ll look at some of them in the next few days.
+
+
+Bonus chatter:
+The thread pool version of
+Free­Library­And­Exit­Thread
+is
+Free­Library­When­Callback­Returns.
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

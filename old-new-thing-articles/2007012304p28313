@@ -1,0 +1,135 @@
+
+
+
+	
+        Non-psychic debugging: If you can't find something, make sure you're looking in the right place          Raymond Chen        
+            
+            January 23rd, 20070 0
+		
+        
+This isn’t psychic debugging,
+but it’s the sort of dumb mistake everybody makes
+and which you can’t see when re-reading your code
+because your brain shows you what you want to see,
+not what’s really there.
+
+
+I’m trying to respond to the PSN_QUERYINITIALFOCUS
+notification, but it’s not working. What am I doing wrong?
+
+INT_PTR CALLBACK DlgProc(HWND hdlg, UINT uMsg,
+                         WPARAM wParam, LPARAM lParam)
+{
+ switch (uMsg) {
+ ...
+ case WM_NOTIFY:
+  switch (reinterpret_cast<NMHDR*>(lParam)->code) {
+  ...
+  case PSN_QUERYINITIALFOCUS:
+   {
+    PSHNOTIFY *ppsn = reinterpret_cast<PSHNOTIFY*>(lParam);
+    SetWindowLongPtr(ppsn->hdr.hwndFrom, DWLP_MSGRESULT,
+                    (LPARAM)GetDlgItem(ppsn->hdr.hwndFrom, IDC_MYCONTROL));
+   }
+   return TRUE;
+  ...
+  }
+  break;
+ }
+ return FALSE;
+}
+
+
+
+You can stare at this code for ages and completely overlook
+that the wrong window handle is being passed to GetDlgItem
+and SetWindowLongPtr.
+The hwndFrom of a WM_NOTIFY message is
+the window that is generating the notification; in this case,
+the PSN_QUERYINITIALFOCUS is generated from the
+property sheet frame window.
+But the result of a dialog message needs to be stored
+in the extra bytes of the dialog that’s
+receiving the message, not the one that’s
+sending it.
+And when you call GetDlgItem, the window manager
+searches for the control among the children of the window you
+pass as the first parameter—but here, IDC_MYCONTROL
+is a child of the property sheet page, not the property sheet frame.
+
+
+The correct code should read
+
+
+    SetWindowLongPtr(hdlg, DWLP_MSGRESULT,
+                    (LPARAM)GetDlgItem(hdlg, IDC_MYCONTROL));
+
+
+This phenomenon of missing the obvious because your brain shows you
+what you want to see (rather than what’s actually there)
+reminds me of a time
+one of my colleagues called me into his office to help figure
+out why one of his loops was iterating only once.
+He called the function up on the screen and talked me through it.
+“Okay, now the variables are set up for the loop, so
+while we haven’t found the entry, we grab the
+next item from the list…”
+
+
+I hesitatantly interrupted.
+“Um, ‘while‘?
+The code says ‘if‘.”
+
+
+“Oops. Um, nevermind. Nothing to see here. Move along now.”
+
+
+This is the same reason you want to have somebody else
+proofread your writing.
+Since you wrote it, your brain will show you what you meant to write,
+not necessarily what you actually wrote.
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+

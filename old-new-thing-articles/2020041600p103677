@@ -1,0 +1,81 @@
+
+
+
+	
+        Why can’t you return an IAsync­Action from a coroutine that also does a co_await?          Raymond Chen        
+            
+            April 16th, 20202 0
+		
+        Suppose you’re writing a coroutine, and the last thing you do is call another coroutine which has exactly the same signature as your function. You might hope to be able to pull off some sort of tail call elimination.
+IAsyncAction DoSomethingAsync(int value);
+
+IAsyncAction MySomethingAsync(int value)
+{
+  auto adjusted_value = adjust_value(value);
+  return DoSomethingAsync(adjusted_value);
+}
+
+If there are no co_await or co_return statements in your function, then it is not compiled as a coroutine, and you can just propagate the IAsync­Action as your own return value.
+But if you use co_await or co_return, then your function becomes a coroutine, and propagation doesn’t work:
+IAsyncAction MySomethingAsync(int value)
+{
+  auto adjusted_value = co_await AdjustValueAsync(value);
+  return DoSomethingAsync(adjusted_value); // doesn't compile
+}
+
+Instead, you have to co_await the final coroutine.
+IAsyncAction DoSomethingTwiceAsync(value)
+{
+  auto adjusted_value = co_await AdjustValueAsync(value);
+  co_await DoSomethingAsync(adjusted_value);
+}
+
+Why can’t you just propagate the final coroutine as the return value of your own coroutine?
+You can look at it in terms of the mechanics of co_await: The caller is going to co_await Do­Something­Twice­Async(), which means that they are going to obtain an awaiter for IAsync­Action and hook up their continuation to it. That awaiter is going to be managing the IAsync­Action that Do­Something­Twice­Async returns, which is not the same as the IAsync­Action that the inner Do­Something­Async returns.
+Or you can look at it in terms of time travel: The transformation of Do­Something­Twice­Async into a coroutine causes the function to return an IAsync­Action at the point of the first suspension, whcih is at the co_await Adjust­Value­Async() call. When the function performs the co_await, it returns an IAsync­Action that represents the remainder of the coroutine. The code that calls Do­Something­Async hasn’t run yet, and consequently its IAsync­Action does not yet exist. When the coroutine resumes, it eventually gets around to calling Do­Something­Async and obtains an IAsync­Action. But it’s far too late to return that as the return value of Do­Something­Twice­Async; that function returned ages ago. You can’t go back in time and say, “Oops, sorry, that’s not the IAsync­Action I wanted to give you. Use this one instead.”
+ 
+
+        
+                
+
+        
+		
+                
+
+            
+            
+                
+                    Raymond Chen                
+                
+            
+            
+
+                
+        
+            Follow 
+          
+                
+            
+        
+                
+            
+    
+   
+
+        
+
+            
+
+            
+       
+        
+	
+
+
+
+
+	
+
+		Tagged Code
+	
+
