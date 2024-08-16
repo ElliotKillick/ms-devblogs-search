@@ -53,7 +53,7 @@ while True:
         # Use article path substring as its identifier
         article_path_part = ''.join(link.split("/")[-2:])
         # Filter for alphanumeric characters only to prevent a local file inclusion vulnerability
-        article_file_name = re.sub("[^\da-zA-Z]", "", article_path_part)
+        article_file_name = re.sub(r"[^\da-zA-Z]", "", article_path_part)
 
         # Store article then grep later because there are lots of articles
         # So, we want to reduce slow network I/O
