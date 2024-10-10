@@ -30,8 +30,16 @@ HEADERS = {
 # In September 2024, the DevBlogs site was redesigned: https://devblogs.microsoft.com/blog/introducing-the-new-dev-blogs-a-modern-streamlined-and-engaging-experience
 # This script has been updated to work with the redesgin; however, the new site introduced a bug whereby blog pages past a certain number incorrectly return 404 (also, JavaScript errors in the console) even though the page exists.
 # I've reported this bug as feedback. So, it should hopefully be fixed. Until then, we can only fetch up to page 712 in my tests.
-# Luckily, we still have the downloads from before the redesign. However, the new format has changed and we now have comments support. As a result, stored blog entries before Macrch 15, 2005 remain in the old format.
+# Luckily, we still have the downloads from before the redesign. However, the new format has changed and we now have comments support. As a result, stored blog entries before March 15, 2005 remain in the old format.
 page_number = 1
+
+# NOTE
+# This script only gathers the first bunch of comments on an article (about 15).
+# The "Load more comments" button requires JavaScript, so this script cannot gather any more.
+# There aren't typically many comments on a single article, though.
+# In the future, we could do some Playwright automation to get these.
+#
+# Also know that while most comments are helpful, some of them contain technically misleading information.
 
 while True:
     listing_response = requests.get(f"{PAGE_LISTING_BASE_URL}{page_number}", headers=HEADERS)
