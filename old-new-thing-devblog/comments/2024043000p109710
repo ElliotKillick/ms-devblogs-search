@@ -1,0 +1,35 @@
+LB  May 4, 2024
+
+
+  0  Collapse this comment
+Copy link
+I'm perplexed how an author of an awaitable type could neglect to consider what happens if the awaiter is moved before being awaited, since that's the only way to implement await_transform in the promise_type. Even if you only want to handle a specific awaiter type with await_transform, the compiler makes you add a generic fallback for all others too, so any promise_type with an await_transform will likely have 1 move unless it's elided by the...Read moreI’m perplexed how an author of an awaitable type could neglect to consider what happens if the awaiter is moved before being awaited, since that’s the only way to implement await_transform in the promise_type. Even if you only want to handle a specific awaiter type with await_transform, the compiler makes you add a generic fallback for all others too, so any promise_type with an await_transform will likely have 1 move unless it’s elided by the compiler, which likely won’t happen in debug builds since returning a function parameter isn’t part of NRVO last I heard. Either way, I wouldn’t dare write an awaitable type without considering being moved one or more times between construction and suspension.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+May 7, 2024
+
+
+  1  Collapse this comment
+Copy link
+The await_transform cannot rely on being able to move the awaiter because the awaiter might not be movable! Usually, the await_transform hangs onto a reference to the awaiter, since it knows that the result of await_transform will be immediately awaited and therefore the original awaiter won't destruct until after the co_await resumes. Awaiters that come out of operator co_await won't be moved (because the only time operator co_await is called is when the result is...Read moreThe await_transform cannot rely on being able to move the awaiter because the awaiter might not be movable! Usually, the await_transform hangs onto a reference to the awaiter, since it knows that the result of await_transform will be immediately awaited and therefore the original awaiter won’t destruct until after the co_await resumes. Awaiters that come out of operator co_await won’t be moved (because the only time operator co_await is called is when the result is about to be awaited, ignoring the wacko case of somebody manually invoking operator co_await).
+Read less
+
+
+
+
+
+
+
+LB  May 8, 2024
+
+
+  0  Collapse this comment
+Copy link
+Interesting, I actually didn’t know the semantics of await_transform worked that way, thanks!

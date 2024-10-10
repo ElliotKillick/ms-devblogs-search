@@ -1,0 +1,192 @@
+Jonathan Harston  April 7, 2023
+
+
+  1  Collapse this comment
+Copy link
+Since sometime in the palaeozoic, all my systems wipe the TEMP directory on boot. Good point about the Downloads directory though, I should add a “delete items over age X” thing to it.
+
+
+
+
+
+Stefan Kanthak  April 1, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+Of course some good guy working for our beloved manufacturer who really cares about the security of Windows and its users^Wcustomers might add the NTFS ACE (D;OIIO;WP;;;WD) to %SystemRoot%\Temp\ and %SystemRoot%\SystemTemp\ as well as all %USERPROFILE%\Downloads\ and all %LOCALAPPDATA%\Temp\ directories — better yet to every %USERPROFILE%\, to %PUBLIC%\, to %ProgramData%\, to %SystemRoot%\DriverStore\ etc.
+
+
+
+
+
+MGetz  March 29, 2023
+
+
+  0  Collapse this comment
+Copy link
+Quite surprised this isn’t in the normal linker options pages. Either way set on my little utility that is very likely to be affected by this and would have been best having this set ages ago.
+
+
+
+
+
+紅樓鍮  March 29, 2023
+
+
+  0  Collapse this comment
+Copy link
+But how is this attribute stored in the PE file?
+
+
+
+
+
+Me Gusta  March 29, 2023
+
+
+  0  Collapse this comment
+Copy link
+From the Microsoft official PE Format documentation, this is in the Load Config Table data directory. This data directory corresponds to the IMAGE_LOAD_CONFIG_DIRECTORY structure that you can find in winnt.h. This has a field named DependentLoadFlags, so I would imagine that this is where it is stored.
+
+
+
+
+skSdnW  March 28, 2023
+· Edited
+
+  1  Collapse this comment
+Copy link
+PSA: XP and older will only accept the original struct size because it checks if the directory entry size == sizeof(IMAGE_LOAD_CONFIG_DIRECTORY). I guess the program will still work? but imagehlp.dll and other things might not be happy. IMAGE_LOAD_CONFIG_DIRECTORY::Size is allowed to be 0, this indicates the original struct. The Size field was not even named Size originally (the PE spec documentation still calls it Characteristics).
+
+
+
+
+
+Joshua Hudson  March 28, 2023
+
+
+  0  Collapse this comment
+Copy link
+So of course I *immediately* on learning of this flag’s existence go set it on our setup bootstrapper. We had previously been relying on knowndlls and careful coding to make this safe. Now we still rely on careful coding but the dependency on knowndlls is dropped.
+And I get a nice undocumented linker warning LNK4266 missing load config symbol for image built with /DEPENDENTLOAGFALG and have no idea what it means.
+
+
+
+
+
+Stefan Kanthak  March 30, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+You could have read https://­skanthak.homepage.t-online.de/snafu.html since more than 5 (in words: FIVE) years; or FullDisclosure since more than 3 years: https://­seclists.org/bugtraq/2020/Jan/41
+I reported this bug in LINK.exe a loooong time ago to the MSRC; their response was "not security relevant;; we'll forward it to the product team" -- and then all of them went back to sleep again.
+JFTR: the "PE Format" documentation https://­msdn.microsoft.com/en-us/library/gg463119.aspx#the-load-configuration-structure-image-only alias https://­msdn.microsoft.com/en-us/library/ms680547.aspx#the-load-configuration-structure-image-only still tells a blatant lie: The Microsoft linker automatically provides...Read moreYou could have read https://­skanthak.homepage.t-online.de/snafu.html since more than 5 (in words: FIVE) years; or FullDisclosure since more than 3 years: https://­seclists.org/bugtraq/2020/Jan/41
+I reported this bug in LINK.exe a loooong time ago to the MSRC; their response was “not security relevant;; we’ll forward it to the product team” — and then all of them went back to sleep again.
+JFTR: the “PE Format” documentation https://­msdn.microsoft.com/en-us/library/gg463119.aspx#the-load-configuration-structure-image-only alias https://­msdn.microsoft.com/en-us/library/ms680547.aspx#the-load-configuration-structure-image-only still tells a blatant lie: The Microsoft linker automatically provides a default load configuration structure to include the reserved SEH data.
+Since Windows 7, relying on KnownDlls is subject to failure: see https://­seclists.org/fulldisclosure/2020/Dec/37 and https://­skanthak.homepage.t-online.de/detour.html for an example.
+And since Windows XP they can be overridden per application manifest.
+Read less
+
+
+
+
+
+
+
+Me Gusta  March 31, 2023
+
+
+  0  Collapse this comment
+Copy link
+Well, this seems to work properly with 17.5.
+
+
+
+
+
+Stefan Kanthak  April 1, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+REALLY?
+Start the VC/VS command prompt and run the following 3 command lines:
+1>.c ECHO int __stdcall _DllMainCRTStartup(void *x, int y, void *z) { return 0; }
+CL.exe /Zl /LD .c /link /DEPENDENTLOADFLAG:2048 /NOD
+LINK.exe /DUMP /LOADCONFIG .dll
+Does the last one display the load configuration?
+
+
+
+
+Ray Koopa  March 29, 2023
+
+
+  0  Collapse this comment
+Copy link
+Maybe because you have a typo in there.
+
+
+
+
+Mystery Man  March 28, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+Huh? Why did the article’s subject suddenly change in the middle of it?
+The post starts on the subject of the TEMP folder. Suddenly, it turns into random nonsense about DLLs, compiling, and the SYSTEM32 folder! It is as if the second paragraph and beyond are copied and pasted from somewhere else.
+This looks like Franeknstein’s blog post. Frankenblog… or Frankenpost.
+
+
+
+
+
+Sunil Joshi  March 28, 2023
+
+
+  0  Collapse this comment
+Copy link
+No, I think the point here is that your application may have been downloaded to the download folder or expanded into the TEMP folder. The default behaviour for DLL resolution involves looking in the directory where the application is located which may be infested with all sorts of DLLs that are not the correct ones (and may take precedence over the ones you actually want e.g. in System32).
+
+
+
+
+
+Antonio Rodríguez  March 28, 2023
+
+
+  0  Collapse this comment
+Copy link
+It’s all part of the same thing. First, Raymond starts talking about the problem of the “disease filled hot tub”, which is a way to say that the Temp and Downloads directories can contain unwanted (or even malicious) versions of the DLLs your process loads. Then, he describes a technique to tell the OS to ignore those DLLs and force it to only load them from System32.
+
+
+
+
+
+George Tokmaji  March 28, 2023
+
+
+  2  Collapse this comment
+Copy link
+You should read the linked article first.
+Since the executable directory is also the application directory, DLLs get loaded from there first, which poses a problem if the executable is placed in a directory filled with other junk, like the temporary folder or the Downloads folder (you don't want your application loading a random DLL just because the user downloaded one).
+If you don't / can't use the switch, the solution is to create a new subdirectory...Read moreYou should read the linked article first.
+Since the executable directory is also the application directory, DLLs get loaded from there first, which poses a problem if the executable is placed in a directory filled with other junk, like the temporary folder or the Downloads folder (you don’t want your application loading a random DLL just because the user downloaded one).
+If you don’t / can’t use the switch, the solution is to create a new subdirectory and put the executable into it.
+Read less
+
+
+
+
+
+
+
+Piotr Siódmak  March 28, 2023
+
+
+  0  Collapse this comment
+Copy link
+Maybe it’s RaymondGPT-3

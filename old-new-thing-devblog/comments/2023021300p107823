@@ -1,0 +1,256 @@
+Stefan Kanthak  February 14, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+"ntdll!ButtonWndProc_A ... Bonus insult: Their button is ANSI, not Unicode. It’s (checks watch) 2023, get with the program. Not everybody who uses a computer speaks English."
+Hmmm... https://docs.microsoft.com/en-us/windows/uwp/design/globalizing/use-utf8-code-page#activeCodePage but advertises that functions like ntdll!ButtonWndProc_A support Unicode!
+Now switch from ntdll to NLS, the "(Inter)National Language Support", and query its GetLocaleInfoA function for LOCALE_SNATIVEDIGITS of MAKELCID(MAKELANGID(LANG_ARABIC, SUBLANG_DEFAULT), SORT_DEFAULT), which according to the documentation of LOCALE_SNATIVE* should return the Arabic numerals ٠١٢٣٤٥ ٦٧٨٩, or for LOCALE_SNATIVELANGUAGE of MAKELCID(MAKELANGID(LANG_ARMENIAN, SUBLANG_ARMENIAN_ARMENIA),...Read more“ntdll!ButtonWndProc_A … Bonus insult: Their button is ANSI, not Unicode. It’s (checks watch) 2023, get with the program. Not everybody who uses a computer speaks English.”
+Hmmm… https://docs.microsoft.com/en-us/windows/uwp/design/globalizing/use-utf8-code-page#activeCodePage but advertises that functions like ntdll!ButtonWndProc_A support Unicode!
+Now switch from ntdll to NLS, the “(Inter)National Language Support”, and query its GetLocaleInfoA function for LOCALE_SNATIVEDIGITS of MAKELCID(MAKELANGID(LANG_ARABIC, SUBLANG_DEFAULT), SORT_DEFAULT), which according to the documentation of LOCALE_SNATIVE* should return the Arabic numerals ٠١٢٣٤٥ ٦٧٨٩, or for LOCALE_SNATIVELANGUAGE of MAKELCID(MAKELANGID(LANG_ARMENIAN, SUBLANG_ARMENIAN_ARMENIA), SORT_DEFAULT), which according to the documentation of LOCALE_SNATIVE* should return Հյերեն
+Surprise: 0123456789 and ???????
+Don’t forget to verify that GetLocaleInfoW but returns the advertised values.
+For several hundred more such failures, see skanthak.homepage.t-online.de/quirks.html#quirk32
+Bonus insult: do the -A functions return Microsoft Unicode?
+Read less
+
+
+
+
+
+
+
+Zsigmond Lőrinczy  February 13, 2023
+
+
+  0  Collapse this comment
+Copy link
+35+ years ago long/LONG was defined as int32_t (just like DWORD was defined as uint32_t), everything since then (i.e. choosing LLP64 instead of LP64) is just consequence of this. (Maybe type LPARAM=intptr_t could have been used instead (e.g. Get-/SetWindowLparam), but that didn’t happen.))
+
+
+
+
+
+Ryan Phelps  February 13, 2023
+
+
+  0  Collapse this comment
+Copy link
+Did your psychic debugging powers lead you to look at the address of the ntdll functions?  That would have taken me approximately infinity -1 years to think of.
+
+
+
+
+
+Joshua Hudson  February 14, 2023
+
+
+  0  Collapse this comment
+Copy link
+A negative pointer in 64 bit address space makes the mistake obvious. If you’re going to do something that can succeed from there, you’re going to overlay on the low 32 bits of the pointer until you find a match somewhere in the dump.
+
+
+
+
+Andreas Schulz  February 13, 2023
+
+
+  0  Collapse this comment
+Copy link
+> It’s (checks watch) 2023, get with the program. Not everybody who uses a computer speaks English.
+Coming from the platform that still fails to support proper UTF-8 in its APIs (https://github.com/microsoft/terminal/issues/7777). It’s 2023, indeed. But you’re blaming the wrong party here.
+
+
+
+
+
+Daniel Sturm  February 16, 2023
+
+
+  0  Collapse this comment
+Copy link
+If only Microsoft had also ignored localization to non English for many many years instead of offering it years before utf8 came around.
+
+
+
+
+
+George Tokmaji  February 13, 2023
+
+
+  0  Collapse this comment
+Copy link
+The platform has properly supported UTF-16 and therefore Unicode for decades. One might think a Control Panel applet would make use of that.
+
+
+
+
+
+Joshua Hudson  February 14, 2023
+
+
+  0  Collapse this comment
+Copy link
+UTF-16 is legacy trash but yeah I too would expect a control panel applet to use it. Among other reasons, you can’t manifest that because it runs in some other process.
+
+
+
+
+Joshua Hudson  February 13, 2023
+
+
+  1  Collapse this comment
+Copy link
+They did fix that. You have to add a manifest to say you have a new enough C library to not explode. The older Microsoft C libraries had problems.
+Get your manifest fragments here: https://learn.microsoft.com/en-us/windows/apps/design/globalizing/use-utf8-code-page
+
+
+
+
+
+Stefan Kanthak  February 15, 2023
+
+
+  0  Collapse this comment
+Copy link
+Fortunately, nobody needs a (Microsoft) C library on Windows: the Win32 API provides all interfaces with its -W functions.
+The -A functions are the legacy trash you wrote about; manifested to abuse UTF-8 they become outright dangerous or just suck — BIG TIME: see FullDisclosure
+
+
+
+
+
+Andreas Schulz  February 13, 2023
+
+
+  0  Collapse this comment
+Copy link
+They did not fix that entirely yet, as you can read with the linked issue above. ReadConsoleA + manifest still does not work.
+
+
+
+George Tokmaji  February 13, 2023
+
+
+  0  Collapse this comment
+Copy link
+> which is the address of ntdll!ButtonWndProc_A
+Huh, I’d have expected it to be in user32.dll, not ntdll.dll.
+
+
+
+
+
+Stefan Kanthak  February 14, 2023
+
+
+  0  Collapse this comment
+Copy link
+NTDLL.dll also exports NtdllDefWindowProc_A, NtdllDefWindowProc_W, NtdllDialogWndProc_A and NtdllDialogWndProc_W
+Now guess where USER32.dll forwards its DefDlgProcA, DefDlgProcW, DefWindowProcA and DefWindowProcW to.
+
+
+
+
+MGetz  February 13, 2023
+
+
+  0  Collapse this comment
+Copy link
+I remember at my first job out of college I had to do work on an extension to a well known piece of publishing software that has largely fallen out of favor that we sold. This was about the time of the x64 transition and I had just finished up the 64bit port of an extension we had to office, a job made all the more fun because someone was doing pinvokes directly to mangled...Read moreI remember at my first job out of college I had to do work on an extension to a well known piece of publishing software that has largely fallen out of favor that we sold. This was about the time of the x64 transition and I had just finished up the 64bit port of an extension we had to office, a job made all the more fun because someone was doing pinvokes directly to mangled C++ symbols, but I digress. The publishing software team had just finished their first pass on porting to x64 and thought they were golden. But, me being me and having run into issues with this before during the extension port I built their code with /LARGEADDRESSAWARE. It promptly crashed because they were passing a HANDLE through MAKEINTRESOURCE to something else. This of course truncated it and caused a crash. Apparently visual studio at the time wouldn’t actually allocate handles or memory above 4GB to programs that didn’t have /LARGEADDRESSAWARE set and it wasn’t set by default. Needless to say I had to turn that off for a week or two before they fixed it. Their team lead was cool with it, but their boss (and my future boss) was not. Unfortunately that would later come back to haunt me. Fortunately I no longer work there.
+Read less
+
+
+
+
+
+
+
+c h  February 13, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+Win10, since long time (and maybe a bit related to this topic):
+Virtual Desktop going from say Desktop 1 to Desktop 2, crashes a heck of a lot.  I mean, a lot.
+I only notice when VS 2019 is running in D1.  Switch to D2 and things just might jitter for a bit (four display monitors, Nvidia), then blooooop, a crashdump gets made and sent.  I would include the name but I delete them...Read moreWin10, since long time (and maybe a bit related to this topic):
+Virtual Desktop going from say Desktop 1 to Desktop 2, crashes a heck of a lot.  I mean, a lot.
+I only notice when VS 2019 is running in D1.  Switch to D2 and things just might jitter for a bit (four display monitors, Nvidia), then blooooop, a crashdump gets made and sent.  I would include the name but I delete them as soon as I can and can’t – don’t want to – remember the name of the .dmp file (okay, probably explorer.something).  For an idea how often, when I even “think” it’s going to happen as I switch to D2, it happens, so too often.  For years.
+The funny thing more is that when I go back to D1 from D2 after the crash, the VS 2019 IDE sizing border/frame (self-drawn frame, not the a real window border) is missing (VS 2022 is different), so no way to size by the edges.
+The only way to get the VS 2019 self-drawn border back is to leave D1 and go to D2 (nothing need be at D2 in any of this scenario), then back to D1.  Then VS 2019 draws the border.
+It’s a drag mainly because I have to do the D2->D1->D2->D1 dance, and then delete and then empty the trash.  Plus, it’s been going for too long.
+Next day now: And the day I get back to vs2019
+  [Event xmlns=”http://schemas.microsoft.com/win/2004/08/events/event”]
+– [System]
+  [Provider Name=”Application Error” /]
+  [EventID Qualifiers=”0″]1000[/EventID]
+  [Version]0[/Version]
+  [Level]2[/Level]
+  [Task]100[/Task]
+  [Opcode]0[/Opcode]
+  [Keywords]0x80000000000000[/Keywords]
+  [TimeCreated SystemTime=”2023-02-14T14:34:14.2568384Z” /]
+  [EventRecordID]198497[/EventRecordID]
+  [Correlation /]
+  [Execution ProcessID=”0″ ThreadID=”0″ /]
+  [Channel]Application[/Channel]
+  [Computer]-[/Computer]
+  [Security /]
+  [/System]
+– [EventData]
+  [Data]Explorer.EXE[/Data]
+  [Data]10.0.19041.2486[/Data]
+  [Data]f69ebb08[/Data]
+  [Data]KERNELBASE.dll[/Data]
+  [Data]10.0.19041.2364[/Data]
+  [Data]5b7d4d22[/Data]
+  [Data]c0000602[/Data]
+  [Data]000000000010fe32[/Data]
+  [Data]209c[/Data]
+  [Data]01d9405e98379b78[/Data]
+  [Data]C:\WINDOWS\Explorer.EXE[/Data]
+  [Data]C:\WINDOWS\System32\KERNELBASE.dll[/Data]
+  [Data]78aa8990-1b97-4ae8-a510-d97b22de1d99[/Data]
+  [Data /]
+  [Data /]
+  [/EventData]
+  [/Event]
+ Faulting application name: Explorer.EXE, version: 10.0.19041.2486, time stamp: 0xf69ebb08
+ Faulting module name: KERNELBASE.dll, version: 10.0.19041.2364, time stamp: 0x5b7d4d22
+ Exception code: 0xc0000602
+ Fault offset: 0x000000000010fe32
+ Faulting process id: 0x209c
+ Faulting application start time: 0x01d9405e98379b78
+ Faulting application path: C:\WINDOWS\Explorer.EXE
+ Faulting module path: C:\WINDOWS\System32\KERNELBASE.dll
+ Report Id: 78aa8990-1b97-4ae8-a510-d97b22de1d99
+ Faulting package full name:
+ Faulting package-relative application ID:
+ 0xc0000602 (NT: 0xc0000602 STATUS_FAIL_FAST_EXCEPTION) — 3221227010 (-1073740286)
+ Error message text: {Fail Fast Exception}
+ A fail fast exception occurred. Exception handlers will not be invoked and the process will be terminated immediately.
+ explorer.exe.8348.dmp — decided to save it this once
+Whoa!  Bad karma – two more in quick succession – 11 seconds apart:
+ Faulting application name: explorer.exe, version: 10.0.19041.2486, time stamp: 0xf69ebb08
+ Faulting module name: KERNELBASE.dll, version: 10.0.19041.2364, time stamp: 0x5b7d4d22
+ Exception code: 0xc0000602
+ Fault offset: 0x000000000010fe32
+ Faulting process id: 0x3f20
+ Faulting application start time: 0x01d940816a36d778
+ Faulting application path: C:\WINDOWS\explorer.exe
+ Faulting module path: C:\WINDOWS\System32\KERNELBASE.dll
+ Report Id: 2d35bfa2-d1c4-4fea-8226-710a80a1ccfc
+ Faulting package full name:
+ Faulting package-relative application ID:
+ Faulting application name: explorer.exe, version: 10.0.19041.2486, time stamp: 0xf69ebb08
+ Faulting module name: KERNELBASE.dll, version: 10.0.19041.2364, time stamp: 0x5b7d4d22
+ Exception code: 0xc0000602
+ Fault offset: 0x000000000010fe32
+ Faulting process id: 0x2c8c
+ Faulting application start time: 0x01d94083c0b0e2fc
+ Faulting application path: C:\WINDOWS\explorer.exe
+ Faulting module path: C:\WINDOWS\System32\KERNELBASE.dll
+ Report Id: eff5f659-b50b-4d4f-ae1e-d245eca4a7ff
+ Faulting package full name:
+ Faulting package-relative application ID:
+Read less

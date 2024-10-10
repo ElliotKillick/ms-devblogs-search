@@ -1,0 +1,197 @@
+Alexis Ryan  January 2, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Injecting a dll with loadlibrary, fun when dealing with ASLR. Thankfully Windows lets you query the location a Dll was loaded at in another process so you can adjust your addresses as needed. I have tried directly copying instructions to another process but only inline assembly instructions and it worked fine because the asm was intentionally written to be position independent and I could use labels to get the exact size of the code
+
+
+
+
+
+Shy Shalom  December 30, 2021
+
+
+  0  Collapse this comment
+Copy link
+Also, conveniently, the signature of LoadLibrary is the same as the signature required by CreateRemoteThread so all you need to copy to the remote process is just the path of the dll to load.
+
+
+
+
+
+Gerrit Albrecht  December 30, 2021
+
+
+  0  Collapse this comment
+Copy link
+Thanks for the contribution. Indeed, code copying used to be a fine thing. When I was at school, we were supposed to write a curve sketching application. My solution was to create and compile a small helping program in the background and then copy the new function f(x) into the main application (Turbo Pascal using an Amiga-based DOS emulator):
+<code> The good old days ;-)
+Read moreThanks for the contribution. Indeed, code copying used to be a fine thing. When I was at school, we were supposed to write a curve sketching application. My solution was to create and compile a small helping program in the background and then copy the new function f(x) into the main application (Turbo Pascal using an Amiga-based DOS emulator):
+  GotoXY( 8,10); Write('Funktion eingeben !   f(x) = ');
+  ReadLn(term);
+  Assign(datei,HilfP_verz + '\HILFPRG.PAS');
+  ReWrite(datei);
+  WriteLn(datei, 'Program Hilfsprogramm;         ');
+  WriteLn(datei, 'Var anzahl : Word;             ');
+  WriteLn(datei, 'Function f(x : Real) : Real;   ');
+  WriteLn(datei, 'Begin                          ');
+  WriteLn(datei, '  f := ',term,';               ');
+  WriteLn(datei, 'End;                           ');
+  WriteLn(datei, 'Function Dummy : Real;         ');
+  WriteLn(datei, 'Begin End;                     ');
+  WriteLn(datei, 'Begin                          ');
+  WriteLn(datei, '  anzahl := Ofs(Dummy)-Ofs(f); ');
+  WriteLn(datei, '  MemW[$0:$4fe] := CSeg;       ');
+  WriteLn(datei, '  MemW[$0:$4fc] := Ofs(f);     ');
+  WriteLn(datei, '  MemW[$0:$4fa] := anzahl;     ');
+  WriteLn(datei, 'End.                           ');
+  Close(datei);
+
+  GotoXY( 8,WhereY+1); WriteLn('Compiling...'); WriteLn;
+  SwapVectors;
+  Exec(turbo_verz + '\TPC.EXE', HilfP_verz + '\HILFPRG.PAS');
+  SwapVectors;
+  GotoXY( 8,WhereY+1); Write('Running...');
+  SwapVectors;
+  Exec(HilfP_verz + '\HILFPRG.EXE','');
+  SwapVectors;
+  GotoXY( 8,WhereY+1); Write('Exchange function...');
+  ziel   := Ptr(CSeg, Ofs(f));
+  quell  := Ptr(MemW[$0:$4fe], MemW[$0:$4fc]);
+  anzahl := MemW[$0:$4fa];
+  Move(quell^, ziel^, anzahl);
+  GotoXY( 8,WhereY+1); Write('Ready.');
+ The good old days 😉
+Read less
+
+
+
+
+
+
+
+Dave Gzorple  December 29, 2021
+
+
+  0  Collapse this comment
+Copy link
+I did this years ago under Windows NT 4 as a proof-of-concept of how dangerous the VirtualXXX functions were, and I remember the pain I had to go through just to pop up a simple dialog in the target process to prove I’d got there.  I was hugely impressed when the l0pht guys later used the concept in a full-blown app, I think it was BO2K.
+
+
+
+
+
+ami karasu  January 1, 2022
+
+
+  0  Collapse this comment
+Copy link
+Yes me too but still work till now
+
+
+
+
+紅樓鍮  December 29, 2021
+
+
+  0  Collapse this comment
+Copy link
+So I searched the Internet for "DLL injection" and learned today that you can pass  as the start address to , and I'm now wondering whether the signature of  has been deliberately given this way...
+On a closer look, however, it turns out that the signature of  isn't an exact match for :  returns a pointer, which is different from 's .  I wonder whether that prevents passing it to ...Read moreSo I searched the Internet for “DLL injection” and learned today that you can pass LoadLibrary as the start address to CreateRemoteThread, and I’m now wondering whether the signature of LoadLibrary has been deliberately given this way…
+On a closer look, however, it turns out that the signature of LoadLibrary isn’t an exact match for LPTHREAD_START_ROUTINE: LoadLibrary returns a pointer, which is different from LPTHREAD_START_ROUTINE‘s DWORD.  I wonder whether that prevents passing it to CreateRemoteThread on any architecture Windows supports or used to support; I think Raymond talked some time ago about how posting a void-returning function to the thread pool can result in crashing on Itanium.
+Read less
+
+
+
+
+
+
+
+Me Gusta  January 4, 2022
+
+
+  0  Collapse this comment
+Copy link
+There is a difference between returning something and returning nothing in this case though.
+Anyway, first, threading was first added to Windows as part of Windows NT.
+For anything 32 bit, the DWORD would match the HMODULE return. Sure, HMODULE, or any handle type, is treated as a pointer in languages like C, it is just a scalar value so it would be treated as an integral type on the ABI. This means that the...Read moreThere is a difference between returning something and returning nothing in this case though.
+Anyway, first, threading was first added to Windows as part of Windows NT.
+For anything 32 bit, the DWORD would match the HMODULE return. Sure, HMODULE, or any handle type, is treated as a pointer in languages like C, it is just a scalar value so it would be treated as an integral type on the ABI. This means that the handling of the return value would be identical. So for 32 bit systems, there would never be any problems.
+64 bit systems do have a problems in that the HMODULE is 64 bit where the DWORD is 32 bit. But if the ABI is designed carefully, then this isn’t a problem. For one example, x64 will return scalars, pods 64 bits or less and _m64 in RAX. Since both pointers and integral types are scalars, then both LoadLibrary and CreateRemoteThread will expect the return in RAX. The only issue is that the upper 32 bits may or may not be valid and you would have to expect that it gets corrupted along the way.
+ARM64 uses the x0 register in a similar way as x64 uses RAX. So while the signatures no longer match, the ABI being designed in such a way that it will use a register that is the pointer size in length will mean that it will stay compatible. This careful design of the ABI should mean that all 64 bit platforms would have no issues.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+January 4, 2022
+
+
+  0  Collapse this comment
+Copy link
+Almost. Alpha AXP requires that 32-bit return values by placed in v0 in canonical form. A non-canonical value (like a pointer) could cause problems but in practice is unlikely to since the thread exit code is a passthrough value.
+
+
+
+
+skSdnW  January 2, 2022
+
+
+  0  Collapse this comment
+Copy link
+Yes, because the register might be NaT https://devblogs.microsoft.com/oldnewthing/20040119-00/?p=41003
+
+
+
+
+
+Kasper Brandt  December 29, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+The ASLR implementation on Windows tries to use the same base address for a given library in all processes (per boot) to maximize page sharing (also making ASLR less effective...), so that may also be why they didn't run into issues on x86 and x64. That is of course also somewhat luck based because the base address for the module may already be in use in the target process, forcing the loader to use another...Read moreThe ASLR implementation on Windows tries to use the same base address for a given library in all processes (per boot) to maximize page sharing (also making ASLR less effective…), so that may also be why they didn’t run into issues on x86 and x64. That is of course also somewhat luck based because the base address for the module may already be in use in the target process, forcing the loader to use another base address.
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  December 29, 2021
+
+
+  0  Collapse this comment
+Copy link
+1) Every time I see somebody doing this in a language other than assembly I get the heebie-jeebies. Raymond is absolutely right just how sensitive this is to code generation.
+2) If you're not doing this in assembly _please_ take Raymond's advise and inject a thread with its start address as LoadLibrary. This works. On a side note, you should pass a full path as the argument (via VirtualAllocEx and WriteProcessMemory; note that you can free...Read more1) Every time I see somebody doing this in a language other than assembly I get the heebie-jeebies. Raymond is absolutely right just how sensitive this is to code generation.
+2) If you’re not doing this in assembly _please_ take Raymond’s advise and inject a thread with its start address as LoadLibrary. This works. On a side note, you should pass a full path as the argument (via VirtualAllocEx and WriteProcessMemory; note that you can free this memory after the remote thread exits); which means you should be calling LoadLibraryW. But that’s a minor point.
+3) While the result of doing LoadLibraryW into a target process is reasonably safe provided you don’t violate the target process’s memory model*, most likely the first thing you will be doing in the target process is not safe at all.
+4) The documentation for RUNTIME_FUNCTION needs to be a lot better. As it stands I can’t register my functions because I can’t fill the structure because the documentation is too bad. https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-runtime_function
+5) We are in the state that everybody knows you don’t need to call RtlAddFunctionTable unless the function or any function it can call can throw structured exceptions. Changing that rule now is a breaking change all over the place.
+* Known memory model constraints:
+1) If the process doesn’t start COM, don’t start COM or even load the COM dlls. It may be incompatible.
+2) If the process doesn’t link against user32 or gdi32, there’s probably a perfectly good reason for that, so don’t do that either.
+3) If you inject a Cygwin process, be prepared for your dll to be loaded into other processes. Also, your dll must have a unique base address.
+4) Check target subsystem. It might not be WIn32 at all.
+The general result of these basically means that injecting all processes is a bad idea. Only inject processes you know.
+Read less
+
+
+
+
+
+
+
+Sunil Joshi  December 29, 2021
+
+
+  0  Collapse this comment
+Copy link
+And stories like this are why I stopped using 3rd party anti-virus programmes. I spotted only half the problems Raymond did when I first saw the code snippet but I could have told you this idea was a non-starter and I only spent about 20 seconds glancing at the code. The idea that a major anti-virus vendor had this concept out in production is terrifying.

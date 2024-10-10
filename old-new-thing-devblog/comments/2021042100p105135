@@ -1,0 +1,64 @@
+David Haim  April 21, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+A. I think the terms "eager tasks" and "lazy tasks" are more common in the C++ world.
+B. Lazy tasks are supposed to have one killer benefit over eager tasks : performance. they don't need any inter-thread synchronization when resuming the caller-coroutine, plus the compiler may shave away the memory allocation of the lazy task and allocate this memory in the parent caller stack (HALO)
+The downside of them that you loose two concurrency models that...Read moreA. I think the terms “eager tasks” and “lazy tasks” are more common in the C++ world.
+B. Lazy tasks are supposed to have one killer benefit over eager tasks : performance. they don’t need any inter-thread synchronization when resuming the caller-coroutine, plus the compiler may shave away the memory allocation of the lazy task and allocate this memory in the parent caller stack (HALO)
+The downside of them that you loose two concurrency models that almost every concurrent application needs: fire and forget, fire and consume later.
+Also, you cannot implement “when_any” for lazy coroutines. It’s simply impossible.
+Internal benchmarking I’ve done for my library (concurrencpp) shows that lazy tasks might have about 5%~8% performance gain over eager tasks, which I consider a marginal gain, considering the huge downsides. I still added them to my library (still in develop branch) because it’s so easy to implement them.
+Read less
+
+
+
+
+
+
+
+Blaise Lengrand  April 22, 2021
+
+
+  0  Collapse this comment
+Copy link
+First of all thanks Raymond for this article and David for this very informative comment.
+Out of curiosity, why “when_any” cannot be implemented with lazy coroutines? If you don’t mind could you elaborate a bit more? I am really interested in this topic and trying to implement myself such functionality but I am still in the learning phase…
+
+
+
+
+
+David Haim  April 24, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+Lazy coroutines have only the performance benefit over eager tasks, if you think about it. if you don't want your coroutine to start, just don't fire it, easy. fire it only when you actually need its result.
+Lazy coroutines don't provide anything else over eager tasks besides performance.
+In order for HALO to kick in, the "future like object" destructor (might it be a "task", "result", "future") that associates the running task must call coroutine_handle::destroy,...Read moreLazy coroutines have only the performance benefit over eager tasks, if you think about it. if you don’t want your coroutine to start, just don’t fire it, easy. fire it only when you actually need its result.
+Lazy coroutines don’t provide anything else over eager tasks besides performance.
+In order for HALO to kick in, the “future like object” destructor (might it be a “task”, “result”, “future”) that associates the running task must call coroutine_handle::destroy, and the destruction must happen in the scope of the parent coroutine. this way, the compiler knows that the callee coroutine starts and finishes in the parent coroutine scope, and it can allocate its memory from the calling stack.
+caller-destroying-the-callee is an axiom when talking about lazy coroutines.
+Eager coroutines, on the other hand, clean themselves up.
+So basically, all lazy coroutine behaves the same when fired:
+* start the callee coroutine suspended.
+* when awaited, store the parent coroutine handle in the callee coroutine promise and resume the callee coroutine.
+* when the callee coroutine finishes, store the result in the promise body
+* resume the parent coroutine
+* pull out the stored result
+* destroy the callee coroutine
+this way, the compiler can implement HALO for lazy coroutines .
+when_all is very similar, with a twist
+* start all coroutines suspended
+* have an atomic counter set to the number of task
+* iterate your coroutines, resume each one
+* when a coroutine finishes, it decrements the counter
+* if the counter is 0, resume the parent coroutine
+this way, you can guarantee  that the parent coroutine is resumed only when all callee corotuines are done, ready to be consumed and destroyed.
+Again, note that the parent coroutine always destroy the callee, keeping the universal order of lazy coroutine.
+when_any is basically a contradiction to this paradigm – when_any by definition means “resume the parent task when at least one task is done”.
+So if you resume the parent coroutine when not all callee coroutines are done – who will destroy them? by the time all tasks are done, it could be that millions coroutines have executed, and the original coroutine does not exist anymore. Since lazy coroutines don’t know how to clean themselves up, when_any is not possible for lazy coroutines.
+If you look closely, no lazy corotuine library (cppcoro, folly’s task implementation, etc) provides when_any, but all of them provide when_all.
+Read less

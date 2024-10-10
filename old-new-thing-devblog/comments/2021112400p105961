@@ -1,0 +1,93 @@
+紅樓鍮  November 25, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+...each  can be a different size, which makes it tricky to pass an array of them
+Your article at 20110318-00/?p=11183 states that:
+...passing an array requires all the pages in the array to use the same custom structure (because that’s how arrays work; all the elements of an array are the same type).
+I guess the solution is to use a  to hold the heterogeneous array of differently sized elements, each tagged with its own size,...Read more…each PROPSHEETPAGE can be a different size, which makes it tricky to pass an array of them
+Your article at 20110318-00/?p=11183 states that:
+…passing an array requires all the pages in the array to use the same custom structure (because that’s how arrays work; all the elements of an array are the same type).
+I guess the solution is to use a std::tuple to hold the heterogeneous array of differently sized elements, each tagged with its own size, making it effectively an intrusive linked list that the framework code can walk.  But what if the n’th element has a size that’s not a whole multiple of the (n+1)’st element’s alignment?  The framework determines the latter’s address by adding the former’s tagged size to the former’s address, but that would be incorrect due to padding.  (The framework has no way of knowing the (n+1)’st object’s alignment; it may well be 16 bytes.)
+Read less
+
+
+
+
+
+
+
+紅樓鍮  November 25, 2021
+
+
+  0  Collapse this comment
+Copy link
+Isn’t it more common nowadays to allocate the OVERLAPPED inside the async state machine object instead?
+
+
+
+
+
+Kay Jay  November 25, 2021
+
+
+  0  Collapse this comment
+Copy link
+Raymond – administrative note. I think your RSS feed is broken. https://devblogs.microsoft.com/oldnewthing/feed throws a ‘304 – not modified’ http code. Last article being fetched is “The mental model for StartThreadpoolIo”.
+
+
+
+
+
+Martin Soles  November 24, 2021
+
+
+  0  Collapse this comment
+Copy link
+I always thought that the size parameters were there for internal purposes and should be treated as opaque. I had the notion that the kernel used this value to figure out versioning. As in, under 3.11, the size parameter was "10" to indicate that the structure contained 10 bytes in a specific format. Under Windows 2000, the parameter was "24" and indicated that the structure could be a completely different sequence of values. It never...Read moreI always thought that the size parameters were there for internal purposes and should be treated as opaque. I had the notion that the kernel used this value to figure out versioning. As in, under 3.11, the size parameter was “10” to indicate that the structure contained 10 bytes in a specific format. Under Windows 2000, the parameter was “24” and indicated that the structure could be a completely different sequence of values. It never occurred to me to lie to the OS and say the size was bigger than the structure was and stuff extra goodness in there.
+I would hope that there was some minimal validation in there to make sure the size parameter meets some minimum. Imagine the fun that happens if you passed a value smaller than the structure size really was. That could be crash waiting to happen at some random point in the future.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+December 2, 2021
+
+
+  0  Collapse this comment
+Copy link
+PROPSHEETPAGE uses a different pattern, where you use the  flags to indicate which fields contain information. This avoids the forward-compatibility problem, because if you extend the structure and add some custom thing, and then later a standard thing shows up at the same offset, your custom thing won't set the  flag, so the system ignores the custom thing.
+Maybe it was wrong for PROPSHEETPAGE to use this different pattern, but it does, so you...Read morePROPSHEETPAGE uses a different pattern, where you use the PSP_HAS* flags to indicate which fields contain information. This avoids the forward-compatibility problem, because if you extend the structure and add some custom thing, and then later a standard thing shows up at the same offset, your custom thing won’t set the PSP_HASNEWTHING flag, so the system ignores the custom thing.
+Maybe it was wrong for PROPSHEETPAGE to use this different pattern, but it does, so you have to deal with it.
+Read less
+
+
+
+
+
+
+
+acampbell  December 2, 2021
+
+
+  0  Collapse this comment
+Copy link
+That was also my understanding. It provides “mostly free compatibility” when Windows adds new fields. If you add your own fields in the place where Microsoft’s new fields would go, you’ll cause exactly the same kinds of compatibility headaches that Raymond often talks about. You might even have an oldnewthing blog post written about your application.
+
+
+
+
+skSdnW  November 24, 2021
+
+
+  0  Collapse this comment
+Copy link
+It is perhaps not well-known because the documentation says otherwise. For PROPSHEETPAGE::dwSize MSDN currently says: Size, in bytes, of this structure. Since this struct has grown over time this is clearly not 100% correct but using a size larger than what Windows itself knows about is risky when the official documentation does not say you can use a larger size.
+Something like the OPENFILENAME struct does the complete opposite, not only can you not make it...Read moreIt is perhaps not well-known because the documentation says otherwise. For PROPSHEETPAGE::dwSize MSDN currently says: Size, in bytes, of this structure. Since this struct has grown over time this is clearly not 100% correct but using a size larger than what Windows itself knows about is risky when the official documentation does not say you can use a larger size.
+Something like the OPENFILENAME struct does the complete opposite, not only can you not make it larger than what Windows expects but you also have to match the actual Windows version you are on and be mindful that your compiler defines/SDK version determines how large the struct is. Specifically, the size changed in Windows 2000 and older versions need the old size. This has been covered here on this blog before where the excuse is that people fail to initialize the size member so functions are coded defensively with == instead of >= size checks.
+Read less

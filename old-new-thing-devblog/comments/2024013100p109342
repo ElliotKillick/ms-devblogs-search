@@ -1,0 +1,115 @@
+Joe Beans  February 1, 2024
+
+
+  0  Collapse this comment
+Copy link
+Why does IServiceProvider exist when we have IUnknown::QueryInterface?
+
+
+
+
+
+Me Gusta  February 2, 2024
+
+
+  0  Collapse this comment
+Copy link
+To answer a question with a question, why does the object that implements IServiceProvider also have to implement ICreatingProcess? This did happen for the above sample, but this isn’t a requirement. IServiceProvider was designed for cases where an object didn’t implement all of the interfaces.
+
+
+
+
+
+Raymond Chen Author
+February 2, 2024
+
+
+  0  Collapse this comment
+Copy link
+IServiceProvider allows an object to say “I don’t implement that interface, but I know someone who does!” This is more general than QueryInterface, which requires the object to implement the interface directly. In our example, the service provider also implements ICreatingProcess, but in the general case, it could have delegated it to another object.
+
+
+
+
+
+Me Gusta  February 4, 2024
+
+
+  0  Collapse this comment
+Copy link
+Oh, interestingly, the docs for IServiceProvider list the minimum client and server versions as Windows 11 (22000).
+
+
+
+Henke37  January 31, 2024
+
+
+  0  Collapse this comment
+Copy link
+This is the first I hear of ICreatingProcess, and I can’t seem to find any matches for it when searching online.
+
+
+
+
+
+George Tokmaji  February 1, 2024
+
+
+  0  Collapse this comment
+Copy link
+https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-icreatingprocess
+First Google result for “msdn icreatingprocess”, can also be found by searching on Microsoft Learn directly.
+
+
+
+
+GL  January 31, 2024
+
+
+  0  Collapse this comment
+Copy link
+MSDN (futuristically known as Microsoft Learn) says that the flag needs to be manually defined prior to Windows 8, but ICreatingProcess is documented to have minimum OS Vista. Does that mean the flag works in Vista and 7, just undocumented, or that SEE will fail in Vista and 7 with that flag, or that SEE succeeds without considering the flag in Vista and 7?
+Also, IContextMenu and SEE don’t always create processes (e.g., IDropTarget and a...Read moreMSDN (futuristically known as Microsoft Learn) says that the flag needs to be manually defined prior to Windows 8, but ICreatingProcess is documented to have minimum OS Vista. Does that mean the flag works in Vista and 7, just undocumented, or that SEE will fail in Vista and 7 with that flag, or that SEE succeeds without considering the flag in Vista and 7?
+Also, IContextMenu and SEE don’t always create processes (e.g., IDropTarget and a local server is already running). In that case, the interface will not affect anything if no process is launched, right?
+If the verb is IDropTarget, does SEE query its IObjectWithSite and pass the site chain in case the implementing object supports it, so that the drop target processes the site chain in case it ends up launching a new process (and potentially other, maybe proprietary services)?
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+February 2, 2024
+
+
+  1  Collapse this comment
+Copy link
+It’s a doc bug. SEE_MASK_FLAG_HINST_IS_SITE is not supported prior to Windows 8. I will submit a doc fix request.
+
+
+
+
+
+Me Gusta  February 2, 2024
+
+
+  0  Collapse this comment
+Copy link
+The most likely thing that happened was that it wasn’t put into the public headers, but Windows supported it.
+It is also possible that this was functionality added into Windows via a patch, and this meant that it wasn’t defined in any of the public headers until the Windows 8 SDK. But in that kind of situation, you would expect the KB number to be listed which introduced the functionality.
+
+
+
+
+Michael Taylor  January 31, 2024
+
+
+  0  Collapse this comment
+Copy link
+Even for Microsoft this seems like a bad hack. Reusing a field that doesn't actually represent what it says it is just smells bad. This is especially bothersome since changing the environment variables of a new process is not that uncommon.
+The SHELLEXECUTEINFO type has the size as the first parameter. As has been done in several other places in Win32 over the years, adding new fields to the struct increases the struct size. Hence a...Read moreEven for Microsoft this seems like a bad hack. Reusing a field that doesn’t actually represent what it says it is just smells bad. This is especially bothersome since changing the environment variables of a new process is not that uncommon.
+The SHELLEXECUTEINFO type has the size as the first parameter. As has been done in several other places in Win32 over the years, adding new fields to the struct increases the struct size. Hence a new SHELLEXECUTEINFO2 struct could be defined that has new field(s) for the environment variable information. The implementation would use the size to determine which type it is working with. Existing code would continue to work as they are using the original type with the original size but new code could use the newer definition.
+I understand the concerns of backwards compatibility but that is a primary reason for passing the size as the first field, to handle these cases. The hack approach runs the risk of breaking existing code as well so I don’t see either approach guaranteeing compatibility. A caller may not be setting the mask properly and have the new mask set by accident. Just seems like this was a poor design decision when a built-in solution was already available.
+Read less

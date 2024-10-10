@@ -1,0 +1,161 @@
+Stuart Ballard  March 25, 2024
+
+
+  0  Collapse this comment
+Copy link
+Is there a way to use templates to provide a wrapper function that solves this problem for the general case? Something like this:
+<code>
+Read moreIs there a way to use templates to provide a wrapper function that solves this problem for the general case? Something like this:
+template <typename F, typename... Args>
+std::thread make_thread(F f, Args... args)
+{
+  // Some kind of template assert using something like is_same_t<> between
+  // TArgs and the parameter types of F to force the template to resolve to
+  // exactly those types, so that conversions happen in the call to
+  // _this_ function
+
+  // I originally thought that sizeof(f(...args)) would be enough, but
+  // I think that was wrong because that's still legal with the unconverted
+  // argument types.
+
+  return std::thread(f, ...args);
+}
+Read less
+
+
+
+
+
+
+
+紅樓鍮  March 26, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+If  is a plain function pointer, you can pattern-match on its signature:
+<code>
+But you'd then also want to handle things like member function pointers, const member function pointers, objects with an unoverloaded  (very hard), etc. And it won't work at all for objects with overloaded or templated (s).
+Edit: Removed "(very hard)" as it can be implemented in terms of the member function pointer overload.
+PS: The implementation above never works with functions taking...Read moreIf F is a plain function pointer, you can pattern-match on its signature:
+template <typename R, typename... Params, typename... Args>
+std::thread make_thread(R (*f)(Params...), Args &&... args) {
+  using decay_tuple = std::tuple<std::decay_t<Params>...>;
+  return {[f, tp = decay_tuple(std::forward<Args>(args)...)] mutable {
+    std::apply(f, std::move(tp));
+  }};
+}
+But you’d then also want to handle things like member function pointers, const member function pointers, objects with an unoverloaded operator() (very hard), etc. And it won’t work at all for objects with overloaded or templated operator()(s).
+Edit: Removed “(very hard)” as it can be implemented in terms of the member function pointer overload.
+PS: The implementation above never works with functions taking non-const lvalue references (std::thread‘s constructor won’t allow you to simply pass an lvalue at the position of a non-const lvalue reference parameter either; it requires you to express your (dangerous) intent by using std::ref. The implementation above can also be made to work with std::ref with some metaprogramming dance).
+Read less
+
+
+
+
+
+
+
+Stuart Ballard  March 26, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+That's fascinating! I'm not a C++ programmer myself but I've read enough of this blog to have an appreciation of how powerful and how intricate it can get. The way you're pattern matching on the function's signature is super clever and I wish I'd thought of it. I had the vague idea that it might be possible to template the Params types and Args types separately, but after poring over C++ specs for things like...Read moreThat’s fascinating! I’m not a C++ programmer myself but I’ve read enough of this blog to have an appreciation of how powerful and how intricate it can get. The way you’re pattern matching on the function’s signature is super clever and I wish I’d thought of it. I had the vague idea that it might be possible to template the Params types and Args types separately, but after poring over C++ specs for things like is_invocable_t for a while I couldn’t see how to do it.
+Why is it necessary to use a closure here, by the way? Is there not a way to avoid that by doing something like
+Params... converted_args = std::something<Params...>(args...);
+std::thread new_thread(f, converted_args);
+return new_thread;
+Edit: Is R allowed to resolve to void, or would a separate overload be needed if we want to accept void-returning functions?
+Edit 2: Does the std::thread constructor work with the special cases you mentioned (member functions, overloaded operator() etc)?
+Read less
+
+
+
+
+
+
+
+紅樓鍮  March 26, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+Why is it necessary to use a closure here
+No, you don't need to use a lambda if you can convert the  to  without using a tuple. Unfortunately C++ doesn't support syntax like
+<code>
+but it seems like you can write
+<code>
+I used a tuple because I totally forgot you can zip-unpack two different parameter packs (of the same length) directly, and I used a lambda because then I needed to use ...Read moreWhy is it necessary to use a closure here
+No, you don’t need to use a lambda if you can convert the Args to Params without using a tuple. Unfortunately C++ doesn’t support syntax like
+Params... converted_args = something(args)...;
+but it seems like you can write
+std::thread(f, something<Params>(args)...)
+I used a tuple because I totally forgot you can zip-unpack two different parameter packs (of the same length) directly, and I used a lambda because then I needed to use std::apply and couldn’t directly invoke f.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+March 26, 2024
+
+
+  0  Collapse this comment
+Copy link
+Another annoying wrinkle is that the parameter packs may not be the same length thanks to default parameters.
+
+
+
+Shao Voon Wong  March 22, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+I also encountered this problem. I have documented it at https://www.codeproject.com/Articles/5377342/VCplusplus-30-Multithreading-Mistakes-on-Windows
+Note: for the original problem of COM ptr. COM ptr needs to be marshalled to another thread. It did not prompt any error because the worker thread did not call CoInitialize() to initialize the COM apartment.
+EDIT2: In the COM case, it can be solved without using COM smart pointer. Just call AddRef() on the raw interface pointer in the main thread to increment reference count...Read moreI also encountered this problem. I have documented it at https://www.codeproject.com/Articles/5377342/VCplusplus-30-Multithreading-Mistakes-on-Windows
+Note: for the original problem of COM ptr. COM ptr needs to be marshalled to another thread. It did not prompt any error because the worker thread did not call CoInitialize() to initialize the COM apartment.
+EDIT2: In the COM case, it can be solved without using COM smart pointer. Just call AddRef() on the raw interface pointer in the main thread to increment reference count to keep it alive and Release() to decrement it in the worker thread.
+Read less
+
+
+
+
+
+
+
+BCS  March 22, 2024
+
+
+  0  Collapse this comment
+Copy link
+Arguably, the root issue is passing `ProcessWidgetChange` as a function pointer. A case can be made that in C++ the name of a function should only ever be treated as an overload set and the only valid operation on an overload set is to call it.
+If the code had been written like the following, it would be a bit more clear what the problem is.
+<code>
+And the solution then becomes:
+<code>
+---
+Of particular note, there are IIRC a...Read moreArguably, the root issue is passing `ProcessWidgetChange` as a function pointer. A case can be made that in C++ the name of a function should only ever be treated as an overload set and the only valid operation on an overload set is to call it.
+If the code had been written like the following, it would be a bit more clear what the problem is.
+void OnWidgetChanged(const char* reason)
+{
+    std::thread backgroundThread([reason] {
+      ProcessWidgetChange(reason);
+    });
+    backgroundThread.detach();
+}
+And the solution then becomes:
+void OnWidgetChanged(const char* reason)
+{
+    std::thread backgroundThread([reason=std::string{reason}] {  // force conversion here
+      ProcessWidgetChange(reason);
+    });
+    backgroundThread.detach();
+}
+—
+Of particular note, there are IIRC a few standard defined identifiers where this is not just a good idea, but required; they are not even defined to be functions despite acting as one syntactically.
+Read less

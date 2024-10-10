@@ -1,0 +1,166 @@
+Alexis Ryan  June 21, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+Strongly Suspect they tried to convert someone else's C code to do code injection into C#, messed it up and crashed the target process and thought the problem was with Windows, not their code. The intent was obviously to create code that would cause another process to display a message box, but this is not the way to do it. Setting the start address to the memory buffer? You had better make sure the buffer...Read moreStrongly Suspect they tried to convert someone else’s C code to do code injection into C#, messed it up and crashed the target process and thought the problem was with Windows, not their code. The intent was obviously to create code that would cause another process to display a message box, but this is not the way to do it. Setting the start address to the memory buffer? You had better make sure the buffer is executable and contains valid instructions. The address of a function is not likely to be a valid instruction. Oops. The original C code probably properly setup the inject buffer and pushed args and called MessageBox. No consideration for ASLR is always a good sign as well as no accounting for process architecture, addresses in one process need not match another process. Of course when you start fighting with ASLR you need to ask yourself “should I be doing this?” even though it’s not hard to do it properly and find the difference in the base addresses for a DLL between processes.
+Read less
+
+
+
+
+
+
+
+a b  June 8, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+There is indeed a message box related method of crashing the system which does not need admin mode or shutdown privilege.
+<code>
+EndTask somehow bypasses the protected process mechanism, terminating csrss which normally can't be terminated even with debug privilege.
+You can change WTSSendMessageW to NtRaiseHardError, another way to ask csrss to create a message box.
+Read moreThere is indeed a message box related method of crashing the system which does not need admin mode or shutdown privilege.
+DWORD response;
+static wchar_t title[]=L"aaaaaa";
+WTSSendMessageW(WTS_CURRENT_SERVER_HANDLE,WTS_CURRENT_SESSION,title,sizeof title,L"1",2,0,0,&response,0);
+Sleep(500);
+EndTask(FindWindowW(0,title),FALSE,TRUE);
+EndTask somehow bypasses the protected process mechanism, terminating csrss which normally can’t be terminated even with debug privilege.
+You can change WTSSendMessageW to NtRaiseHardError, another way to ask csrss to create a message box.
+Read less
+
+
+
+
+
+
+
+Daniel Roskams  June 8, 2023
+· Edited
+
+  1  Collapse this comment
+Copy link
+That crashes Windows 10 systems, but it doesn't have any effect on Windows 7, Vista, XP, or 2000. It was a bug introduced in Windows 8.
+The reason EndTask "bypasses" the protected process mechanism is because EndTask is implemented as an inter-process call to CSRSS which basically asks CSRSS to terminate the process that owns the specified window handle (the function within CSRSS which implements this is called _EndTask). So when you pass a HWND which...Read moreThat crashes Windows 10 systems, but it doesn’t have any effect on Windows 7, Vista, XP, or 2000. It was a bug introduced in Windows 8.
+The reason EndTask “bypasses” the protected process mechanism is because EndTask is implemented as an inter-process call to CSRSS which basically asks CSRSS to terminate the process that owns the specified window handle (the function within CSRSS which implements this is called _EndTask). So when you pass a HWND which is owned by CSRSS, then you are asking CSRSS to commit suicide and take down the system with it. And there is no safety check or privilege check involved here so you get a blue screen. That’s why you can use a non-elevated Task Manager to kill elevated processes (such as administrator command prompt), as long as they have a window that you can get a HWND to.
+Curiously, if you use the Windows 7 or prior task manager on Windows 8 or above, you are able to initiate this crash without writing a program to do it. If you find some application that imports from a non-existent DLL (or if you just delete some DLL that an app needs), and you run it, then the loader calls NtRaiseHardError to cause CSRSS to create a message box which informs the user of the missing DLL. The Windows 7 and prior task manager displays these CSRSS message boxes in the “Applications” list, which you can then select and press “End Task” while holding down the Ctrl key in order to cause the fForce parameter of EndTask to equal TRUE. Bluescreen happens.
+However in Windows 8 and above they reskinned task manager, and the CSRSS message boxes are no longer shown in the “Apps” section of task manager. Very nice way to avoid this bug.
+Read less
+
+
+
+
+
+
+Daniel Roskams  June 8, 2023
+
+
+  0  Collapse this comment
+Copy link
+From all the vulnerability reports that Microsoft receives, about what percentage of them are this sort of rubbish that, despite being obviously amateur, still has to be given at least a cursory glance? I can imagine there being plenty of script kids that think they’ve found a great new Security Hole(TM) and want to try and cash in.
+
+
+
+
+
+Simon Geard  June 8, 2023
+
+
+  0  Collapse this comment
+Copy link
+It’s worse than that… running as an administrator, they can force the entire system to reboot or shut down!! 😉
+
+
+
+
+
+🌊#️⃣  June 7, 2023
+
+
+  0  Collapse this comment
+Copy link
+ If you can get “all access” rights to a process, then you pwn the process, and it’s therefore not suprising that you can inject code into it to make it crash.
+Think you meant own the process, but pwn works as well 😁
+
+
+
+
+
+Peter Cooper Jr.  June 7, 2023
+
+
+  2  Collapse this comment
+Copy link
+I suspect that Raymond did, in fact, intentionally use the word “pwn”.
+
+
+
+
+Dan Bugglin  June 7, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+WOW.
+Here is what I am seeing:
+1. First, GCHandle.Allow simply causes the object passed into it to not be garbage collected. The returned value has nothing to do with the object itself (MSDN explicitly points this out: "Normal handles are opaque, which means that you cannot resolve the address of the object it contains through the handle."), so the IntPtr they get doesn't mean anything. .NET can move data around in memory so the GCHandle cannot...Read moreWOW.
+Here is what I am seeing:
+1. First, GCHandle.Allow simply causes the object passed into it to not be garbage collected. The returned value has nothing to do with the object itself (MSDN explicitly points this out: “Normal handles are opaque, which means that you cannot resolve the address of the object it contains through the handle.”), so the IntPtr they get doesn’t mean anything. .NET can move data around in memory so the GCHandle cannot be a pointer unless the object is pinned, which they didn’t do. Of course, it could be an implementation detail that P/Invoked functions are always pinned but who knows. Not these guys, I think.
+2. size is going to be the size of the string representation of the function. Which is not very useful since Func has no implementation for it, so it just returns a string representation of the type name and generic parameters.
+3. I am guessing the only reason reading from inject as a pointer in an unmanaged context does NOT crash this app is that GCHandle happens to use it as an unmanaged pointer internally. If this implementation detail were to ever be broken this app would possibly crash at this step.
+4. Even if they did it correctly, I’m pretty sure P/Invoke means they would be writing the managed code wrapper for the unmanaged function, not the unmanaged function itself (not sure how that works internally). And CreateRemoteThread can’t run managed code.
+5. Finally, they call CreateRemoteThread pointing to garbage data, which of course is likely to result in crashing the thread.
+Only thing that confuses me is how the thread crashing crashes the whole application. It should only crash the specific thread. MSDN docs do say:
+> Thread termination due to a invalid start address is handled as an error exit for the thread’s process.
+But they do seem to have provided a (more-or-less) valid block of memory as an address so I don’t think that’s relevant.
+To be fair I haven’t done unmanaged code in a while. The new thread is likely to run into invalid op codes or simply into unallocated memory at some point. I don’t know if those error conditions would crash the whole app (I would expect just the thread). The other possibility is this customer simply tried different apps until they found two that crashed, where some didn’t.
+Read less
+
+
+
+
+
+
+
+George Tokmaji  June 8, 2023
+
+
+  0  Collapse this comment
+Copy link
+And they’re also leaking the handle returned by CreateRemoteThread, not that it matters much since the target process crashes anyway.
+
+
+
+
+
+chrisok  June 7, 2023
+
+
+  0  Collapse this comment
+Copy link
+Amen to all of that. :-)
+Cannot resist to add these things though.
+Func MessageBox = EnableMenuItem;
+This just defines a delegate to call the (via P/Invoke) EnableMenuItem Win32 function. The actual MessageBox Win32 P/Invoke declaration above is never used and could have been just left out of the code. So the whole "vulnerability" is even less about MessageBox as it was before (not that it has ever been ;-)).
+As you said, "size" is simply the length of...Read moreAmen to all of that. 🙂
+Cannot resist to add these things though.
+Func MessageBox = EnableMenuItem;
+This just defines a delegate to call the (via P/Invoke) EnableMenuItem Win32 function. The actual MessageBox Win32 P/Invoke declaration above is never used and could have been just left out of the code. So the whole “vulnerability” is even less about MessageBox as it was before (not that it has ever been ;-)).
+As you said, “size” is simply the length of the string representation of this delegate (so the length of “System.Func`4[System.IntPtr,System.UInt32,System.UInt32,System.Int32]”, that is 69) – added here for those of us who are not so much into .NET and C#.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+June 7, 2023
+
+
+  0  Collapse this comment
+Copy link
+“Only thing that confuses me is how the thread crashing crashes the whole application.” The thread crashes, the exception goes unhandled, and that crashes the process.

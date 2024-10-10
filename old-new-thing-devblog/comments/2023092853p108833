@@ -1,0 +1,49 @@
+GL  September 28, 2023
+
+
+  0  Collapse this comment
+Copy link
+This reminds me of an idea when I read your "Avoiding double-destruction when an object is released". What if we make it a standard practice to track resurrection in a component object?
+<code>
+This model is even better than the CLR model of finalization --- if the object holds a smart COM pointer in a member variable, the referenced interface is still valid during finalization!
+Read moreThis reminds me of an idea when I read your “Avoiding double-destruction when an object is released”. What if we make it a standard practice to track resurrection in a component object?
+ULONG __stdcall Release() final override
+{
+  ULONG cRef = InterlockedDecrement(&m_cRef);
+  // The object is still reachable from outside.
+  if (cRef != 0)
+    return cRef;
+  // The object is not reachable from outside
+  // nor registered for finalization,
+  // so it can be "collected".
+  if (!m_fShouldFinalize)
+  {
+    // The destructor should not do anything exciting.
+    delete this;
+    return cRef;
+  }
+  // Run the finalizer in a stable state.
+  m_cRef = 1;
+  m_fShouldFinalize = false;
+  Finalize();
+  // During previous finalization,
+  // the object might have been resurrected,
+  // and even re-registered for finalization.
+  return Release();
+}
+This model is even better than the CLR model of finalization — if the object holds a smart COM pointer in a member variable, the referenced interface is still valid during finalization!
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+September 28, 2023
+
+
+  0  Collapse this comment
+Copy link
+And now you have a live COM reference to a finalized object. The object probably won’t work any more, seeing as it has already been finalized (and freed half of its member variables).

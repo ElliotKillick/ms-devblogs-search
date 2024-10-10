@@ -1,0 +1,122 @@
+Letao Wang  September 18, 2024
+
+
+  0  Collapse this comment
+Copy link
+In the last example, is there a way to say “the default interface for MyPage is IPage” (or whatever the default interface for Page is)?  That seems like the most desirable outcome in that situation.
+
+
+
+
+
+Me Gusta  September 18, 2024
+
+
+  0  Collapse this comment
+Copy link
+No.
+While it is easy to see this syntax and think of C++/C# inheritance, MyPage does not inherit from Page, and by extension, does not implement IPage.
+What the above syntax states is composition. Basically, the instance of MyPage contains an instance of Page. This means that MyPage has to go through Page to use Page's functionality. But there is nothing stopping you from doing something like:
+<code>
+You only really get into this situation when...Read moreNo.
+While it is easy to see this syntax and think of C++/C# inheritance, MyPage does not inherit from Page, and by extension, does not implement IPage.
+What the above syntax states is composition. Basically, the instance of MyPage contains an instance of Page. This means that MyPage has to go through Page to use Page’s functionality. But there is nothing stopping you from doing something like:
+auto my_page = winrt::make<MyPage>();
+return my_page.as<Page>();
+You only really get into this situation when you want to override things, so it is perfectly fine to keep the identity of the composed object.
+Read less
+
+
+
+
+
+
+
+Me Gusta  September 25, 2024
+
+
+  0  Collapse this comment
+Copy link
+Okay, first of all, this post is going to go into wall of text territory. But this is required to provide all of the information that you require to understand what is going on here.
+Secondly, I will remind you that I already mentioned that there is a simple way of effectively doing what you want in this situation.
+MyPage myPage{};
+auto page = myPage.as<Page>();
+I put this outside of a code block this time to make...Read moreOkay, first of all, this post is going to go into wall of text territory. But this is required to provide all of the information that you require to understand what is going on here.
+Secondly, I will remind you that I already mentioned that there is a simple way of effectively doing what you want in this situation.
+MyPage myPage{};
+auto page = myPage.as<Page>();
+I put this outside of a code block this time to make sure that you see it. This is C++/WinRT, but the projection for other languages will allow the same thing. This queries the MyPage instance for the contained Page instance, and the default interface for Page is IPage. So, anything that you want must be compared against this.
+Thirdly, I’m not going to be talking about theoretical runtime classes. I am going to talk about a very specific situation. That is, in a WinUI 3 project, you want to show a Microsoft.UI.Xaml.Controls.Page instance, and the way that you customise the behaviour is by “deriving” from it and this provides the content and custom behaviours for the runtime class. The Xaml project system does this a lot, and it happens in UWP Xaml too. So I am going to talk about existing runtime classes, this means that if you obtain the Windows App SDK, you can also get the metadata for these runtime classes to verify this information. So if I mention Page or IPage, assume that these are in the Microsoft.UI.Xaml.Controls namespace and I am referring to the Windows App SDK/WinUI 3 runtime classes.
+Now, to address the “MyPage doesn’t implement IPage, and we don’t want it to implement IPage” statement. It isn’t that there is a choice here, MyPage is not allowed to implement IPage. IPage is defined with the exclusiveto attribute in the metadata. To show you the IDL that this could be defined with:
+[contract(Microsoft.UI.Xaml.WinUIContract, 1.0)]
+[exclusiveto(Microsoft.UI.Xaml.Controls.Page)]
+[uuid(EB42988E-6CB5-5DD6-9E59-4C04E5CAEC6D)]
+interface IPage : IInspectable
+{
+    [propget] HRESULT Frame([out] [retval] Microsoft.UI.Xaml.Controls.Frame** value);
+    [propget] HRESULT NavigationCacheMode([out] [retval] Microsoft.UI.Xaml.Navigation.NavigationCacheMode* value);
+    [propput] HRESULT NavigationCacheMode([in] Microsoft.UI.Xaml.Navigation.NavigationCacheMode value);
+    [propget] HRESULT TopAppBar([out] [retval] Microsoft.UI.Xaml.Controls.AppBar** value);
+    [propput] HRESULT TopAppBar([in] Microsoft.UI.Xaml.Controls.AppBar* value);
+    [propget] HRESULT BottomAppBar([out] [retval] Microsoft.UI.Xaml.Controls.AppBar** value);
+    [propput] HRESULT BottomAppBar([in] Microsoft.UI.Xaml.Controls.AppBar* value);
+}
+This is MIDL 2. It is a bit more verbose that MIDL 3, but it should be readable. The important thing here is the exclusiveto attribute. If you try to define another runtime class that states that it implements this interface, MIDL will emit an error. So, in order to get MyPage, which we will define as “deriving from”, otherwise known as composing Microsoft.UI.Xaml.Controls.Page, to state that IPage is its default interface, then it will have to state that an interface that it isn’t allowed to implement is the default interface.
+Also, IPage is an accessible interface from a declarative point of view. By stating that MyPage is in this composable relationship with Page, it is stating that all public interfaces exposed through Page are queriable from MyPage. This is what allows the projection to query for Page from MyPage.
+To illustrate what I mean, the default interface for MyPage, IMyPage is will always be based upon IInspectable, and IInspectable is always based upon IUnknown. On the ABI level, obtaining interfaces that the runtime class implements hasn’t changed compared to COM. This means that:
+//Initialise this somehow. Something based upon RoActivateInstance for the runtime class named MyNamespace.MyPage is going to be used.
+com_ptr myPage;
+//This calls IUnknown::QueryInterface with the UUID set to __uuidof(IPage)
+auto page = myPage.as();
+In other words, you directly query IMyPage for the IPage interface.
+Finally, suppose we ignore the exclusiveto attribute and just implement IPage in MyPage anyway. First of all, how would we get access to it? Do you query IMyPage for it? If so, does it use the same UUID as IPage? If it does, how would you get the real IPage interface? If not, do you believe that it will have any kind of performance benefit over directly querying for IPage?
+Remember, the MIDL 3 in Raymond’s post shows that the only thing it defines is the constructor. This doesn’t add anything to IMyPage. This adds an activatable attribute to the MyPage runtime class indicating that an instance of this runtime class can be created through IActivationFactory::ActivateInstance. The IMyPage interface for that MyPage runtime class is functionally identical to IInspectable. This seriously means that you can get the Page instance out of it and use it directly with no loss of functionality.
+Read less
+
+
+
+
+
+
+
+Letao Wang  September 24, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+What you describe sounds like "MyPage doesn't implement IPage, and we don't want it to implement IPage, but the projection nevertheless behaves as if it does, and you can still call IPage methods on MyPage".  So it effectively does implement IPage from a functional point of view, but IPage is not an accessible interface from a declarative point of view.
+I mean, I understand your point that it's all implemented based on COM which is...Read moreWhat you describe sounds like “MyPage doesn’t implement IPage, and we don’t want it to implement IPage, but the projection nevertheless behaves as if it does, and you can still call IPage methods on MyPage”.  So it effectively does implement IPage from a functional point of view, but IPage is not an accessible interface from a declarative point of view.
+I mean, I understand your point that it’s all implemented based on COM which is why WinRT also doesn’t do interfaces that way.  My point is that it *can* and it would make sense if it did.  It would take a little extra magic with MIDL syntax and projections and wrappers and stuff, but ultimately it seems achievable to make WinRT act as if MyPage inherits IPage from Page (the projection is already 90% of the way there).  Again, your answer that “no, currently it can’t do that” is noted.  I’m just thinking about desirable behaviors since the original example didn’t exactly leave users with the best outcome.
+Read less
+
+
+
+
+
+
+
+Me Gusta  September 19, 2024
+
+
+  0  Collapse this comment
+Copy link
+@Letao Wang
+As an answer, this will likely require a huge block of text. It would have to take into account exclusiveto, meaning MyPage potentially couldn't declare IPage as one of the implemented interfaces.
+Also, it seems like you misunderstood something, there may not be an inheritance relationship between MyPage and Page, but MyPage has access to all of Page's functionality. On the projection level, the wrapper classes would generate member functions for all of...Read more@Letao Wang
+As an answer, this will likely require a huge block of text. It would have to take into account exclusiveto, meaning MyPage potentially couldn’t declare IPage as one of the implemented interfaces.
+Also, it seems like you misunderstood something, there may not be an inheritance relationship between MyPage and Page, but MyPage has access to all of Page’s functionality. On the projection level, the wrapper classes would generate member functions for all of Page’s exposed functionality. If you call one of these, the internal mechanism would use QueryInterface to get IPage from IMyPage and just call the correct function. This is where that composing stuff comes in.
+If you want to look into the actual mechanism, look into the Component Object Model and aggregation. While projections like C++/WinRT and CsWinRT wrap it up nicely as classes, this is how it is implemented internally.
+Read less
+
+
+
+
+
+
+
+Letao Wang  September 19, 2024
+
+
+  0  Collapse this comment
+Copy link
+Thanks for the reply.  I’m still not clear on why it’s not doable though.  If MyPage doesn’t inherit IPage from Page, then declaring IPage to be the default interface for MyPage would be asking for MyPage to implicitly implement IPage, and every IPage method being called on MyPage gets directly forwarded to the underlying Page.  This achieves the desirable behavior despite there being no inheritance relationship.

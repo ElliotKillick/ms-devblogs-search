@@ -1,0 +1,84 @@
+Martin Ba  January 16, 2024
+
+
+  0  Collapse this comment
+Copy link
+Gotta chime in here on the
+> In practice, catching std::bad_alloc doesn’t usually help much. Your exception-handling code is probably going to allocate some memory, so you’re back where you started.
+which is not true at all in my experience: For me std::bad_alloc almost always comes from trying to allocate a "huge" buffer, or multiple "large" buffers.
+If I try to allocate a 655 MB std::vector and get a std::bad_alloc (had these a lot on 32bit because...Read moreGotta chime in here on the
+> In practice, catching std::bad_alloc doesn’t usually help much. Your exception-handling code is probably going to allocate some memory, so you’re back where you started.
+which is not true at all in my experience: For me std::bad_alloc almost always comes from trying to allocate a “huge” buffer, or multiple “large” buffers.
+If I try to allocate a 655 MB std::vector and get a std::bad_alloc (had these a lot on 32bit because of address space fragmentation), the program has plenty of memory left to handle that error.
+Read less
+
+
+
+
+
+
+
+Me Gusta  January 16, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+There are two points to mention regarding this.
+1) How do you know from the std::bad_alloc handler that this is one of those "almost always" cases?
+2) What useful work can you do do in handling this error? Even if it is one of those cases where the allocation failed because of address space fragmentation, the allocation that caused the exception is still highly likely to fail again.
+While I understand that you could argue that part...Read moreThere are two points to mention regarding this.
+1) How do you know from the std::bad_alloc handler that this is one of those “almost always” cases?
+2) What useful work can you do do in handling this error? Even if it is one of those cases where the allocation failed because of address space fragmentation, the allocation that caused the exception is still highly likely to fail again.
+While I understand that you could argue that part of Raymond’s statement isn’t always valid, it still doesn’t change the fact that std::bad_alloc is an exception that is usually better left uncaught.
+Read less
+
+
+
+
+
+
+
+NoLongerBreathedIn  January 18, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+1) This is why std::bad_alloc should have a  that you can get; for backwards-compatibility of source code, it would have to default to 0 (meaning "unknown").
+2) One case is when you're interpreting a script written in some other language, like ECMAScript or Lua. In that case, while you probably can't do much useful work in handling the error, if you know that the allocation failed because it was ludicrously large you can at least...Read more1) This is why std::bad_alloc should have a size that you can get; for backwards-compatibility of source code, it would have to default to 0 (meaning “unknown”).
+2) One case is when you’re interpreting a script written in some other language, like ECMAScript or Lua. In that case, while you probably can’t do much useful work in handling the error, if you know that the allocation failed because it was ludicrously large you can at least safely dump a stack trace to console so that the script can be more easily debugged (see, for example, this Chrome bug for something that couldn’t have easily been debugged any other way).
+Read less
+
+
+
+
+
+George Tokmaji  January 15, 2024
+
+
+  0  Collapse this comment
+Copy link
+Nitpicks / additional information:
+> except for error_bad_alloc, which is the C++/WinRT internal name for E_OUT­OF­MEMORY.
+Which gets thrown as `std::bad_alloc`.
+> In practice, catching std::bad_alloc doesn’t usually help much.
+A common case would be catching it at the ABI boundary to convert them it into `E_OUTOFMEMORY` - at which point you're better off with `winrt::to_hresult` anyway, as it's less code, does the right thing and cleanly separates your own exception handling logic from the catch-all handler at ABI...Read moreNitpicks / additional information:
+> except for error_bad_alloc, which is the C++/WinRT internal name for E_OUT­OF­MEMORY.
+Which gets thrown as `std::bad_alloc`.
+> In practice, catching std::bad_alloc doesn’t usually help much.
+A common case would be catching it at the ABI boundary to convert them it into `E_OUTOFMEMORY` – at which point you’re better off with `winrt::to_hresult` anyway, as it’s less code, does the right thing and cleanly separates your own exception handling logic from the catch-all handler at ABI translation layer.
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  January 15, 2024
+
+
+  0  Collapse this comment
+Copy link
+Catching `std::bad_alloc` works fine if you don't have too many Microsoft libraries on the stack. The unwind code almost always frees enough memory to report out of memory. And in the rare case it doesn't, throwing a new `std::bad_alloc` is fine because there's another exception handler above it. The top-level worker has `catch(...)` and restores a sane working environment. Actions will work again as soon as enough memory becomes available. Most of the time the...Read moreCatching `std::bad_alloc` works fine if you don’t have too many Microsoft libraries on the stack. The unwind code almost always frees enough memory to report out of memory. And in the rare case it doesn’t, throwing a new `std::bad_alloc` is fine because there’s another exception handler above it. The top-level worker has `catch(…)` and restores a sane working environment. Actions will work again as soon as enough memory becomes available. Most of the time the hog will hit its on `std::bad_alloc` and fail pretty quickly.
+The problem comes in when enough Microsoft libraries took Raymond’s advice, particularly async libraries and can’t recover from `std::bad_alloc` and the async job is dropped on the floor. Then you can get so stuck you can’t remote into the server to fix it.
+Read less

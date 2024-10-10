@@ -1,0 +1,48 @@
+Kalle Niemitalo  July 31, 2021
+
+
+  0  Collapse this comment
+Copy link
+!object shows both "HandleCount" and "PointerCount". According to the WDK documentation, when the last handle is closed, that triggers an IRP_MJ_CLEANUP request, and the driver must then complete the I/O requests as cancelled. However, the IRP_MJ_CLEANUP (IFS) topic does not mention the same requirement. Is that then a difference between file system drivers and other drivers? I suppose that, if the Cache Manager has its own pending I/O requests on the same file object, it...Read more!object shows both “HandleCount” and “PointerCount”. According to the WDK documentation, when the last handle is closed, that triggers an IRP_MJ_CLEANUP request, and the driver must then complete the I/O requests as cancelled. However, the IRP_MJ_CLEANUP (IFS) topic does not mention the same requirement. Is that then a difference between file system drivers and other drivers? I suppose that, if the Cache Manager has its own pending I/O requests on the same file object, it does not expect the file system driver to cancel those during IRP_MJ_CLEANUP.
+Read less
+
+
+
+
+
+
+
+Sebastiaan Dammann  July 30, 2021
+
+
+  0  Collapse this comment
+Copy link
+I can see someone ignorant calling CloseHandle twice as a workaround. Or does the kernel maintain two reference counts?
+
+
+
+
+
+Raymond Chen Author
+July 30, 2021
+
+
+  0  Collapse this comment
+Copy link
+Double-closing a handle just fails the second close operation with ERROR_INVALID_HANDLE. Kernel objects are reference-counted, but handles aren't. One way of imagining it is that the kernel object reference count is the number of outstanding handles, and when I/O begins, the app-provided handle is duplicated and the duplicate is closed when the I/O completes. (But internally, the handle itself is optimized out and the kernel just manipulates the the internal reference count directly, so the...Read moreDouble-closing a handle just fails the second close operation with ERROR_INVALID_HANDLE. Kernel objects are reference-counted, but handles aren’t. One way of imagining it is that the kernel object reference count is the number of outstanding handles, and when I/O begins, the app-provided handle is duplicated and the duplicate is closed when the I/O completes. (But internally, the handle itself is optimized out and the kernel just manipulates the the internal reference count directly, so the internal reference count is “the number of outstanding handles + the number of outstanding I/O operations”.)
+Read less
+
+
+
+
+
+
+switchdesktopwithfade@hotmail.com  July 30, 2021
+
+
+  0  Collapse this comment
+Copy link
+I can't imagine the hell of working with async I/O without coroutines or stream class wrappers.  You ending up forgetting (or becoming too terrified to implement) at least half of the obvious boilerplate like ref-counting your operations. Plus if I'm not mistaken you have to maintain your own safeguarded seek pointer because file reads are specified as absolute offsets. Lately the threadphobes are talking wildly about IORING being the cure-all and I'm just SMH.
+p.s....Read moreI can’t imagine the hell of working with async I/O without coroutines or stream class wrappers.  You ending up forgetting (or becoming too terrified to implement) at least half of the obvious boilerplate like ref-counting your operations. Plus if I’m not mistaken you have to maintain your own safeguarded seek pointer because file reads are specified as absolute offsets. Lately the threadphobes are talking wildly about IORING being the cure-all and I’m just SMH.
+p.s. Why no async CreateFile or GetFileAttributes yet?
+Read less

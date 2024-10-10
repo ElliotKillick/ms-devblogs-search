@@ -1,0 +1,116 @@
+紅樓鍮  June 16, 2021
+
+
+  0  Collapse this comment
+Copy link
+At which addresses do the trampolines live?  As a trampoline has to live close to the branch insn, do compilers always reserve spaces around functions for potential trampoline injection?
+
+
+
+
+
+Raymond Chen Author
+June 16, 2021
+
+
+  0  Collapse this comment
+Copy link
+As long as no object file is larger than 16MB, the the linker can insert the trampolines between object files. And if function-based linking is active (which it always is in practice), then the linker can insert code between functions.
+
+
+
+
+
+Florian Philipp  June 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+Wait, then isn’t it inconsistent to assume that any branch may change R12? If the assumption is that trampolines can be reached from any point within a function, then no branch to a target within the function should ever require a trampoline, right? In that case, couldn’t the compiler treat R12 a call-clobbered register?
+
+
+
+
+
+Jonathan Duncan  June 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+The AAPCS states that r12 may be altered "at any branch instruction that is exposed to a relocation that supports inter-working or long branches.
+So as long as the compiler knows a given branch is non-interworking (so all of them in this case as we're limited to thumb), and non-long then, it is safe to use r12 for intermediate values.
+Or in case of huge >16MB functions, the compiler can still use long branches and r12 safely...Read moreThe AAPCS states that r12 may be altered “at any branch instruction that is exposed to a relocation that supports inter-working or long branches.
+So as long as the compiler knows a given branch is non-interworking (so all of them in this case as we’re limited to thumb), and non-long then, it is safe to use r12 for intermediate values.
+Or in case of huge >16MB functions, the compiler can still use long branches and r12 safely as long as the branch target is not exposed to a relocation.
+I imagine that in that case it’d be the compilers responsibility to add the trampoline within the function rather than the linker, and I suspect the compiler would choose to do so via a chaining short-branch at the trampoline rather than using r12 anyway.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+June 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+The compiler can’t really assume that a branch is safe from rewrite because code motion due to PGO can rewrite any short branch to a long branch and trigger a trampoline.
+
+
+
+
+
+Florian Philipp  June 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+I guess MGetz’s note that LDR is discouraged for R12 is the actual answer. Since we are not starved for registers, dealing with the complexities around R12 is probably just not worth it.
+
+
+
+
+
+紅樓鍮  June 16, 2021
+
+
+  0  Collapse this comment
+Copy link
+OK, I think I somehow misread the entire article thinking it’s the dynamic linker that injects trampolines…
+
+
+
+MGetz  June 16, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+Short answer to your ponder: Because ARM explicitly say to avoid using r12 as a target of an LDR instruction. Beyond that LDR would seem to be the better choice as it doesn’t require an immediate whereas MOVT does and thus could load the jump directly from the relocation table without requiring a fix up by the loader.
+
+
+
+
+
+Raymond Chen Author
+June 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+That caution is in the “doubleword load on classic ARM” section, so it means that “ldrd r12, [pc, #imm]” is strongly discouraged. The caution doesn’t apply here since not only are we Thumb-2 (not classic ARM), we aren’t even a doubleword load. My guess is that the recommendation against “ldrd r12” in classic ARM is that the implicit second destination is “r13” which is “sp”.
+
+
+
+
+
+MGetz  June 17, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+Yeah... I was reading that. I can't find any specific reason other than that. Googling around actually shows examples where compilers are actually doing an . The ARM docs seem mostly to be indicating "This is reserved for the linker... just ignore it" more than anything else. They do have a very prescribed relocation mechanism though, but I couldn't find out which variant MS is using; that does have conventions on how you talk to...Read moreYeah… I was reading that. I can’t find any specific reason other than that. Googling around actually shows examples where compilers are actually doing an ldr r12, [PC offset]. The ARM docs seem mostly to be indicating “This is reserved for the linker… just ignore it” more than anything else. They do have a very prescribed relocation mechanism though, but I couldn’t find out which variant MS is using; that does have conventions on how you talk to r12 as best I can tell.
+The only other thing I can think of from the MS linker/compiler perspective is the hooking mechanism like they do on x86, but normally that’s in a function prolog. mov + movt is 8 bytes which would be more than enough to clobber with a relocation if necessary at runtime to any arbitrary location.
+Read less

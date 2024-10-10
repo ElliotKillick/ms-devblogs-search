@@ -1,0 +1,148 @@
+Mystery Man  August 26, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+Microsoft’s official suggestion seems to be the System.ComponentModel.Win32Exception class. Something like this:
+[System.ComponentModel.Win32Exception]::new(0x8000000B).Message
+Or… if you want it in C#:
+using System;
+using System.ComponentModel;
+
+class Program
+{
+    public static void Main()
+    {
+        var E_BOUNDS = unchecked((int)0x8000000B);
+        Console.WriteLine((new Win32Exception(E_BOUNDS).Message));
+    }
+}
+
+
+
+
+
+Ivan K  August 27, 2021
+
+
+  0  Collapse this comment
+Copy link
+Yeah I’m pretty sure I also used win32exception. Maybe it has the same overhead, and the other way also probably handles win32 errors like “5”. Anyway, I’m a bit sad because I think in 5 +/- years time all my windows code will be obsolete, to me at least :(.
+
+
+
+
+switchdesktopwithfade@hotmail.com  August 26, 2021
+
+
+  0  Collapse this comment
+Copy link
+Create a 7,300+ line HRESULT enum with every single Microsoft HRESULT value that ever existed. Just do it. Then ToString( ) tells you exactly the rich Win32 string identifier at runtime, which you can put in your trace or use to more quickly find tech support. I’ve never looked back. The code is only tedious the first time, then you never have to write it again for the rest of your life.
+
+
+
+
+
+Martin Ba  September 1, 2021
+
+
+  0  Collapse this comment
+Copy link
+Somehow it is a boon that most user facing code does NOT display the Win32 error code identifier. (like e.g. ERROR_CIMFS_IMAGE_CORRUPT)
+When googling for errors and you just include the FormatMessage Text and the Hex Code, you often find general help and troubleshooting.
+When including the error identifier / macro name the search results tend to be more developer focused, precisely because it is not what the common user would see.
+Of course, the fact that...Read moreSomehow it is a boon that most user facing code does NOT display the Win32 error code identifier. (like e.g. ERROR_CIMFS_IMAGE_CORRUPT)
+When googling for errors and you just include the FormatMessage Text and the Hex Code, you often find general help and troubleshooting.
+When including the error identifier / macro name the search results tend to be more developer focused, precisely because it is not what the common user would see.
+Of course, the fact that the error FormatMsg texts are localised and some software just displays a localised text without any code is just a different sad story.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+August 26, 2021
+
+
+  0  Collapse this comment
+Copy link
+Do you update the enum each time a new Windows version is released, to add the new error codes? Or is your list just frozen from the point you wrote it originally? For example ERROR_CIMFS_IMAGE_CORRUPT was added in 19041.
+
+
+
+
+
+switchdesktopwithfade@hotmail.com  August 28, 2021
+
+
+  0  Collapse this comment
+Copy link
+I always aggressively update the enum to every single new code I discover on the latest Windows version whether I use it or not, but the updated enum only makes it out with new app builds. IIRC there used to be a page long ago on the MS website that showed the Win32 API changes from version to version and that was nice. I should have a more elaborate system of diff-ing API header files...Read moreI always aggressively update the enum to every single new code I discover on the latest Windows version whether I use it or not, but the updated enum only makes it out with new app builds. IIRC there used to be a page long ago on the MS website that showed the Win32 API changes from version to version and that was nice. I should have a more elaborate system of diff-ing API header files for new codes but right now everything just works. I’m gonna add ERROR_CIMFS_IMAGE_CORRUPT = 470 right now, I was missing it. My enum of Win32 errors is over 3000 values and my NTSTATUS enum has about 1200. Same positive story. Hope that helps.
+Once you have the strong enum, then you can create really clever extension methods and then the ideas just snowball from there.
+One thing I used to do with the Win32 enum is create a [DebuggerDisplay] that calls an extension method that calls FormatMessage. Then you would just hover over the variable in the debugger and get the full description string instantly. But it hasn’t worked for me in latest VS builds.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+August 28, 2021
+
+
+  0  Collapse this comment
+Copy link
+If you have to update it at each release of Windows, I don’t see how that fits in with the “you never have to write it again for the rest of your life” claim.
+
+
+
+
+
+Antonio Rodríguez  August 26, 2021
+
+
+  0  Collapse this comment
+Copy link
+Not only that. Even if he took the effort to update the error message table with each new version of the Windows SDK, you still would have the problem of an user running a version of the app from 2016 in Windows 10 21H1. Go tell the user that the "Error: error description not found" message is because s/he is still using the last version of the app s/he paid for. Messages of that kind...Read moreNot only that. Even if he took the effort to update the error message table with each new version of the Windows SDK, you still would have the problem of an user running a version of the app from 2016 in Windows 10 21H1. Go tell the user that the “Error: error description not found” message is because s/he is still using the last version of the app s/he paid for. Messages of that kind are about as useful as the mythic “Error 0: no error found”. You gotta love the user friendliness of some software…
+Read less
+
+
+
+
+
+Henke37  August 26, 2021
+
+
+  0  Collapse this comment
+Copy link
+To be fair, if you care about a HRESULT, you usually want to throw it as a managed exception anyway.
+
+
+
+
+
+Daniel Sturm  August 26, 2021
+
+
+  0  Collapse this comment
+Copy link
+And most of the time the interop layer takes care of converting the HResult to an exception anyhow.
+Still I had situations where I had to pinvoke FormatMessage (because I wasn’t aware of this helper method), but I can’t for the life of me remember why.
+Probably incompetence (or inexperience) on someone’s part (most likely mine).
+
+
+
+
+
+Antonio Rodríguez  August 26, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+Right. But sometimes you may need to log it or show an human-readable message to the user. That's where this trick comes handy. It's not very useful to get errors like "Error 0x80012345", and certainly not user friendly at all. Personally, I do hate it when I get them and I'm forced to search the code on the Internet. I doubly hate it when the search results come from a more popular package which uses...Read moreRight. But sometimes you may need to log it or show an human-readable message to the user. That’s where this trick comes handy. It’s not very useful to get errors like “Error 0x80012345”, and certainly not user friendly at all. Personally, I do hate it when I get them and I’m forced to search the code on the Internet. I doubly hate it when the search results come from a more popular package which uses the same code for a completely different scenario (and buries the information I need to the sixth page of the search results).
+Read less

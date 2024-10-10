@@ -1,0 +1,255 @@
+Gunnar Dalsnes  March 30, 2019
+
+
+  0  Collapse this comment
+Copy link
+Im confused about the 
+SynchronizationContext.Current check.What if I set this to null on the gui thread?And what if suddenly not null on a background thread?
+
+
+
+
+
+Kalle Niemitalo  March 31, 2019
+
+
+  0  Collapse this comment
+Copy link
+If SynchronizationContext.Current == null on a GUI thread, you will have other problems.  Don't do that.
+SynchronizationContext.Current != null on a thread-pool thread might happen, e.g. if someone reads AsyncOperationManager.SynchronizationContext.  To handle that, ThreadPoolThreadSwitcher.IsCompleted should perhaps also check SynchronizationContext.Current.GetType() == typeof(SynchronizationContext), like e.g. YieldAwaitable.YieldAwaiter.QueueContinuation does.  However, I don't think omitting this check causes any real problem.  ThreadPoolThreadSwitcher will just unnecessarily enqueue another task on the thread pool instead of running the code on the current thread.
+Read moreIf SynchronizationContext.Current == null on a GUI thread, you will have other problems.  Don’t do that.
+SynchronizationContext.Current != null on a thread-pool thread might happen, e.g. if someone reads AsyncOperationManager.SynchronizationContext.  To handle that, ThreadPoolThreadSwitcher.IsCompleted should perhaps also check SynchronizationContext.Current.GetType() == typeof(SynchronizationContext), like e.g. YieldAwaitable.YieldAwaiter.QueueContinuation does.  However, I don’t think omitting this check causes any real problem.  ThreadPoolThreadSwitcher will just unnecessarily enqueue another task on the thread pool instead of running the code on the current thread.
+Read less
+
+
+
+
+
+
+毅 吕  March 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+Hi Raymond Chen, I’ve written a WPF version of this kind of thread switching. See here: https://blog.walterlv.com/post/bring-thread-switching-tasks-to-csharp-for-wpf.html But it is written in Chinese.
+It works correctly.
+
+
+
+
+
+Fred Miller  March 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+Async/await could have been designed to be a simple syntactic wrapper around reset/shift which has long been there in functional languages.  I see it unfortunate that the .NET implementation of async/await enforces that the awaited thing always run (no matter where and when) its received continuation once and only once, by giving up control over the async method's control flow to the state machine (the state machine's `MoveNext` method does not accept a parameter specifying...Read moreAsync/await could have been designed to be a simple syntactic wrapper around reset/shift which has long been there in functional languages.  I see it unfortunate that the .NET implementation of async/await enforces that the awaited thing always run (no matter where and when) its received continuation once and only once, by giving up control over the async method’s control flow to the state machine (the state machine’s `MoveNext` method does not accept a parameter specifying where it should move next; it always picks up where it lefted).  That way async/await has become truly a tool unusable anywhere except in asynchnorous programming contexts.  Otherwise, C# could have had the imperative counterpart to LINQ (consider `await RunEverythingBelowThisManyTimes(10); ThisWillBeExecutedTenTimes();`).
+Read less
+
+
+
+
+
+
+
+Fred Miller  March 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+That “unless explicitly configured, `await` does not switch threads” simply isn’t true.  Consider a console app without a `TaskScheduler` or `SynchronizationContext`.  An `await someTask;` there will switch to a thread pool thread.
+
+
+
+
+
+Raymond Chen Author
+April 1, 2019
+
+
+  0  Collapse this comment
+Copy link
+More precisely, it would be “unless explicitly configured, ‘await’ does not switch synchronization contexts”. But each UI thread has its own synchronization context, so it’s convenient (although not precise) to think of synchronization contexts as UI threads.
+
+
+
+
+
+Fred Miller  April 2, 2019
+
+
+  0  Collapse this comment
+Copy link
+Or perhaps even more precisely — "`await`ing `Task`s and other .NET standard library awaitable objects, except `ConfiguredTaskAwaitable`, does not switch synchronization contexts."  I'm not sure if the language guideline dictates that implementors of awaitable types respect `SynchronizationContext.Current`; .NET classes follow this convention, but ultimately this is not enforced by the compiler or runtime, it is safe to break this convention, and here it becomes obvious that doing so is absolutely helpful in many asynchronous programming...Read moreOr perhaps even more precisely — “`await`ing `Task`s and other .NET standard library awaitable objects, except `ConfiguredTaskAwaitable`, does not switch synchronization contexts.”  I’m not sure if the language guideline dictates that implementors of awaitable types respect `SynchronizationContext.Current`; .NET classes follow this convention, but ultimately this is not enforced by the compiler or runtime, it is safe to break this convention, and here it becomes obvious that doing so is absolutely helpful in many asynchronous programming problems.
+Read less
+
+
+
+
+
+aybe  March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+This looks very interesting but I am having a hard time understanding where the magic is VS when you use Dispatcher.BeginInvoke?
+Example:
+<code>
+Co-incidentally, you wrote that post while I have an issue in my Unity3D game where long loading times freezes it since I need to use its main thread. I came with the idea of a Dispatcher-alike system but now that you've dropped what appears to be a gem according to comments, I...Read moreThis looks very interesting but I am having a hard time understanding where the magic is VS when you use Dispatcher.BeginInvoke?
+Example:
+
+async Task<Whatever> DoSomethingLongAsync()
+{
+    var stuff = await Dispatcher.BeginInvoke(...); // get something requiring UI thread
+    // aren't we at this point, back to our thread already ?
+    var result = ... // do something with 'stuff'
+    return result;
+}
+
+Co-incidentally, you wrote that post while I have an issue in my Unity3D game where long loading times freezes it since I need to use its main thread. I came with the idea of a Dispatcher-alike system but now that you’ve dropped what appears to be a gem according to comments, I am wondering whether it’d be nice to have, until I understand its benefits.
+Thanks!
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+Well,  isn't awaitable, so let's await on the  instead. But now you have the same problems we saw over the past two days. The task completes before your  has completed, and any values you want to provide back to the UI thread have to be hoisted out of the lambda. And then there's a third problem: An async lambda is not implicitly convertible to . You'll have to manually cast it to...Read moreWell, Dispatcher.BeginInvoke() isn’t awaitable, so let’s await on the DispatcherOperation.Task instead. But now you have the same problems we saw over the past two days. The task completes before your ... has completed, and any values you want to provide back to the UI thread have to be hoisted out of the lambda. And then there’s a third problem: An async lambda is not implicitly convertible to Delegate. You’ll have to manually cast it to Func<Task>, which is even more cumbersome. Just to get the code to compile, you’ll have to do this:
+async Task DoSomethingLongAsync()
+{
+    string result1 = null;
+    string result2 = null;
+    await Dispatcher.BeginInvoke((Func<Task>)(async () => {
+        result1 = Compute1();
+        var other = await ContactWebServiceAsync();
+        result2 = Compute2(result1, other);
+    })).Task;
+    TextBlock1.Text = result1;
+    TextBlock2.Text = result2; // oops, this displays nothing
+}
+
+and you still have to solve the problem that the TextBlock2.Text = result2 displays nothing because result2 is null.
+Read less
+
+
+
+
+
+
+
+aybe  April 1, 2019
+
+
+  0  Collapse this comment
+Copy link
+Ah yes, that’s right it’s not awaitable… Thank you for the explanations ! 
+
+
+
+Ji Luo  March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+The sugar’s so sweet! Just being curious: do the destructors run on a different thread if we’re on a different thread when the control goes beyond the closing brace?
+
+
+
+
+
+Raymond Chen Author
+March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+Yup, for C++, the destructors run at the “natural” times, on whatever thread happens to be executing.
+
+
+
+
+Steven Wolf  March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+This is brilliant!  Being able to schedule things on the UI thread simply by using a single line of code w/o having to worry about stack context and ownership etc. except in terms of the function itself?!  YES!  I’ll take a dozen, please.
+
+
+
+
+
+Nick  March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+I like this quite a bit, especially how linear and readable it is (usually the opposite being true for thread-related activities).  Using "await" just to switch thread contexts does feel a little dirty, but if it's a common pattern in the application then that's probably not a big deal.
+The awaitable pattern in C# is pretty neat, and one of the rare examples of duck typing in the language.  I admit being a little surprised that...Read moreI like this quite a bit, especially how linear and readable it is (usually the opposite being true for thread-related activities).  Using “await” just to switch thread contexts does feel a little dirty, but if it’s a common pattern in the application then that’s probably not a big deal.
+The awaitable pattern in C# is pretty neat, and one of the rare examples of duck typing in the language.  I admit being a little surprised that GetResult() can be void, but I guess that’s necessary to support async void methods.
+Read less
+
+
+
+
+
+
+
+Nick Allmaker  March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+I love this
+
+
+
+
+
+Christoffer Haglund  March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+Would it make sense to declare a [ThreadStatic] thread-switcher as well? In a view, like the example above, you have the Dispatcher property very easily accessible, but in a model or view model (assuming you follow the MVVM pattern) you'd need to either pass it in or get it through Window.Current or similar lookup. While not particularly difficult, perhaps it would make view models look even cleaner if we could do something like
+<code>
+Another...Read moreWould it make sense to declare a [ThreadStatic] thread-switcher as well? In a view, like the example above, you have the Dispatcher property very easily accessible, but in a model or view model (assuming you follow the MVVM pattern) you’d need to either pass it in or get it through Window.Current or similar lookup. While not particularly difficult, perhaps it would make view models look even cleaner if we could do something like
+void MethodCalledFromView(){
+    var foregroundThreadContext = ThreadSwitcher.GetCurrent();
+    await ThreadSwitcher.ResumeBackgroundAsync();
+    // do work
+    await foregroundThreadContext;
+    // update properties and post property change events
+}
+
+Another approach would be to let the helper methods return previous context, that would enable a pattern like
+void MethodCalledFromView(){
+    var foregroundContext = await ThreadSwitcher.ResumeBackgroundAsync();
+    // do work in background
+    await foregroundContext;
+    // do work on the original thread
+}
+
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+That’s a pretty cool idea. In fact, C# already has a thing that does this: SynchronizationContext.Current.

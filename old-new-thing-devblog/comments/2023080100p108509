@@ -1,0 +1,184 @@
+Turtlefight  August 7, 2023
+· Edited
+
+  1  Collapse this comment
+Copy link
+ and  could theoretically¹ also reduce the size of non-empty classes, due to the members being allowed to overlap (tail padding reuse).²
+For example given the following two types:³
+<code>
+The following sizes would be expected:³
+-
+-
+-  (8 bytes for A, 4 bytes for B, 2 bytes tail padding to reach the alignment requirement of 4)
+ however could be 8, assuming the compiler decides to reuse the 2 bytes of tail padding within...Read morecompressed_pair and fancy_pair_t1 could theoretically¹ also reduce the size of non-empty classes, due to the members being allowed to overlap (tail padding reuse).²
+For example given the following two types:³
+
+struct A {
+    std::int32_t a;
+    std::int16_t b;
+    /* 2 bytes of padding */
+};
+
+struct B {
+    std::int16_t c;
+};
+
+The following sizes would be expected:³
+– sizeof(A) == 8
+– sizeof(B) == 4
+– sizeof(pair<A,B>) == 12 (8 bytes for A, 4 bytes for B, 2 bytes tail padding to reach the alignment requirement of 4)
+sizeof(compressed_pair<A,B>) however could be 8, assuming the compiler decides to reuse the 2 bytes of tail padding within A subobject to store the B subobject. (The B subobject is allowed to partially or fully overlap the A subobject because A is a potentially-overlapping subobject) – the same applies to fancy_pair_t1<A,B>.
+This would be the resulting object layout for this: (B is stored completely within A’s tail padding)
+
+  +-------------- A -------------+
+ /                                \
+0                4        6        8
++----------------+--------+--------+
+|        a       |    b   |    c   |
++----------------+--------+--------+
+ \                         \      /
+  \                         +- B +
+   \                            /
+    +-- compressed_pair<A,B> --+
+
+gcc & clang will apply this optimization if A is not a pod type: ⁴ (for backwards ABI compatibility with older C++ versions)
+godbolt
+msvc on the other hand doesn’t seem to reuse tail padding at all:
+godbolt
+(maybe I’m missing some magic compiler flag for this (?))
+My guess would be that it’s due to ABI backwards-compatibility constraints.
+ I unfortunately didn’t manage to find some official documentation about it.
+——————
+¹ Assuming the compiler decides to apply this optimization – it is not mandated by the C++-Standard
+² Both compressed_pair and fancy_pair_t1 result in T1 being a potentially-overlapping subobject, so T2 is allowed to overlap with T1.
+³ Assuming “normal” alignment requirements and no packing, i.e. alignof(std::int8_t) == sizeof(std::int8_t), alignof(std::int16_t) == sizeof(std::int16_t), alignof(std::int32_t) == sizeof(std::int32_t)
+⁴ Both follow the Itanium ABI, which mandates tail padding reuse for non-pod types and disallows it for pod types.
+Read less
+
+
+
+
+
+
+
+Jan Ringoš  August 1, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+[[no_unique_address]] is very nice, but there’s a lot of potential for further improvement on this front.
+So much additional padding bytes could be saved. E.g. by some MSVC extension (I don’t expect anything standard in this regard) so that this:
+struct Abc {
+    int something;
+    void * ptr;
+};
+std::map <short, Abc> data;
+…didn’t waste a whole 16 bytes of padding per node (on x64).
+
+
+
+
+
+Raymond Chen Author
+August 1, 2023
+· Edited
+
+  2  Collapse this comment
+Copy link
+You can do that today via an MSVC extension.
+<code>
+Mind you, creating a variable of type  (not part of a larger structure) is going to create an unaligned , so you have to be careful what you wish for.
+Read moreYou can do that today via an MSVC extension.
+
+#include <pshpack4.h>
+struct Abc {
+    int something;
+    void* ptr;
+};
+#include <poppack.h>
+
+std::map<short, Abc> data;
+// sizeof(std::pair<short, Abc>) is 16
+
+Mind you, creating a variable of type Abc (not part of a larger structure) is going to create an unaligned ptr, so you have to be careful what you wish for.
+Read less
+
+
+
+
+
+
+
+Jan Ringoš  August 2, 2023
+· Edited
+
+  1  Collapse this comment
+Copy link
+Ha!
+I didn't think that a packing pragma will propagate all the way down to std::_Tree_node, which is what I wanted:
+<code>
+Although the core of my thought was slightly elsewhere, I guess if one can manually track the underlying layout to get the members properly aligned, packing will do. Thanks!
+But to elaborate on what I meant: If you would manually flatten the above mentioned _TreeNode into one single flat struct, then the language would not insert...Read moreHa!
+I didn’t think that a packing pragma will propagate all the way down to std::_Tree_node, which is what I wanted:
+#include <pshpack2.h>
+struct Abc {
+    int something;
+    void* ptr;
+};
+#include <poppack.h>
+
+static_assert (sizeof (std::map <short, Abc>::_Node) == 40); // down from 56!
+Although the core of my thought was slightly elsewhere, I guess if one can manually track the underlying layout to get the members properly aligned, packing will do. Thanks!
+But to elaborate on what I meant: If you would manually flatten the above mentioned _TreeNode into one single flat struct, then the language would not insert the 16 bytes of padding, but it would still maintain the proper alignment of each member. I believe we need another attribute to do that. To illustrate on a different example:
+struct Abc {
+    int i;
+    void * ptr;
+};
+struct Def [[pack_as_if_flattened]] {
+    short w;
+    Abc abc;
+};
+static_assert (sizeof (Def) == 16);
+If I don’t pack Def structure, I get sizeof = 24. If I pack it to 2, I get sizeof = 14, with misaligned pointer. With the attribute, best of both worlds would happen. And that would also affect the map/tree node, but the right way this time.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+August 2, 2023
+
+
+  1  Collapse this comment
+Copy link
+But [[pack_as_if_flattened]] would result in Abc having two different layouts depending on context. Inside a Def it has no padding, but standalone it has 4 bytes of padding. Which makes it impossible to write
+
+Abc* GetAbc(Def& def)
+{
+   return &def.abc;
+}
+
+This returns a “4-byte-padded” pointer to Abc, but the def.abc has no padding.
+
+
+
+
+
+Jan Ringoš  August 2, 2023
+
+
+  0  Collapse this comment
+Copy link
+Yes, that is a problem. I don’t have complete solution to issues such attribute would cause. Other than, well, it being two different types, and implicit conversions being disallowed. It would probably cause more confusion than gains in performance and memory savings.
+
+
+
+George Tokmaji  August 1, 2023
+
+
+  2  Collapse this comment
+Copy link
+Note that [[no_unique_address]] is currently a noop in MSVC due to ABI concerns.

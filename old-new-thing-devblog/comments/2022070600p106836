@@ -1,0 +1,96 @@
+dcook  July 6, 2022
+
+
+  0  Collapse this comment
+Copy link
+I’m pretty sure that the C++/CX syntax `s->Length()` is undefined behavior. C++ explicitly disallows this == nullptr, and compilers like Clang will optimize such paths as “unreachable”. Admittedly, Clang doesn’t support C++/CX, but similar C++-only wrappers could exist on Clang and syntax like the above could lead to confusing optimizations.
+With that said, the WindowsGetStringLength and s.size() checks look good.
+
+
+
+
+
+Raymond Chen Author
+July 8, 2022
+
+
+  0  Collapse this comment
+Copy link
+See the linked article. s is not a pointer. It’s a custom type that looks like a pointer (String^).
+
+
+
+
+
+紅樓鍮  July 7, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Actually, you can realistically create your own smart pointer type that semantically equates nullptr to "", whose definitions of operator*, operator[], operator-> etc handle nullptr specially by returning a pointer/reference to a literal "", whose operator== equates nullptr to "", etc.
+
+
+
+
+
+Tobias Käs  July 7, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+C++/CX will most likely be using a userdefined type, so 's' won't be nullptr ... it will be a value of the userdefined type containing a field with the nullptr and defining the methods "properly" by calling the ABI. This needs the arrow operator to return another userdefined type and not "just" dereference the pointer, as the pointer points to nothing that has a length method. So given how you typically implement API shims I...Read moreC++/CX will most likely be using a userdefined type, so ‘s’ won’t be nullptr … it will be a value of the userdefined type containing a field with the nullptr and defining the methods “properly” by calling the ABI. This needs the arrow operator to return another userdefined type and not “just” dereference the pointer, as the pointer points to nothing that has a length method. So given how you typically implement API shims I don’t see how this would invoke undefined behavior.
+Read less
+
+
+
+
+
+
+Brian Ross  July 6, 2022
+
+
+  0  Collapse this comment
+Copy link
+> If you are checking for a nonempty string, you can just check for null.
+What if someone passes in an allocated string buffer that happens to point to an empty string (ie. just null terminator).
+If you just check the pointer value – won’t you miss this scenario?
+
+
+
+
+
+Brian Ross  July 6, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Checking further.. I guess this is why it is safe:
+> One of the special rules for HSTRING is similar to the corresponding rule for BSTR, namely that a null pointer is equivalent to a zero-length string. But HSTRING takes it further: Not only is a null pointer equivalent to a zero-length string, but in fact a null pointer is the representation of a zero-length string. In other words, if you call WindowsCreateString and specify that...Read moreChecking further.. I guess this is why it is safe:
+> One of the special rules for HSTRING is similar to the corresponding rule for BSTR, namely that a null pointer is equivalent to a zero-length string. But HSTRING takes it further: Not only is a null pointer equivalent to a zero-length string, but in fact a null pointer is the representation of a zero-length string. In other words, if you call WindowsCreateString and specify that the string has length zero, then out will come a null pointer.
+You can’t get a HSTRING that is non-null for the case above – WindowsCreateString would have returned nullptr.
+Read less
+
+
+
+
+
+
+
+Dmitry Vozzhaev  July 6, 2022
+
+
+  0  Collapse this comment
+Copy link
+But this still looks dangerous. In C++ calls to a null object are UB.
+
+
+
+
+
+Me Gusta  July 6, 2022
+
+
+  0  Collapse this comment
+Copy link
+This is one of those “it depends” situations. For example, the winrt::hstring class is a container, much like std::string.
+So while the C API/ABI will use null to represent an empty HSTRING, I would be very surprised if any of the C++ projections would use null to indicate an empty HSTRING. But I only really know C++/WinRT, and I know that this projection uses references to pass parameters.

@@ -1,0 +1,162 @@
+Jonathan Wilson  February 15, 2020
+
+
+  0  Collapse this comment
+Copy link
+Microsoft (if they aren't already) should be not only digitally signing all the binaries that are part of Windows (which I think they do) but also giving an error if the digital signature doesn't check out. What's the point of having digital signatures (and having all the OS files digitally signed) if random apps (after the user clicks OK on the UAC dialog) can hack critical system files and Windows just loads them and doesn't...Read moreMicrosoft (if they aren’t already) should be not only digitally signing all the binaries that are part of Windows (which I think they do) but also giving an error if the digital signature doesn’t check out. What’s the point of having digital signatures (and having all the OS files digitally signed) if random apps (after the user clicks OK on the UAC dialog) can hack critical system files and Windows just loads them and doesn’t care that they are modified?
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  February 15, 2020
+
+
+  0  Collapse this comment
+Copy link
+Microsoft does, however defeating the signature check is well-known. The patching process actually results in the OS believing the files are signed. (If Microsoft didn’t check at runtime, the patchers wouldn’t have bothered and the servicing stack would have had an easy way to tell it’s looking at a patched binary.)
+
+
+
+
+
+cheong00  February 16, 2020
+
+
+  0  Collapse this comment
+Copy link
+I thought the Windows Update Client itself is checking the downloaded files with hard-coded certificate already.
+Anyway I found those “system enhancements” DLL often have the version information retained untouched, indicating from which version of the file it is patched. I think there is a good chance that if the WU client found the file is tempered, trying to restore the file with same version and build number would work.
+
+
+
+Pierre Baillargeon  February 14, 2020
+
+
+  0  Collapse this comment
+Copy link
+I would have thought the quality update would have hash of files to avoid just this problem of corrupted files. Maybe it does and Mr Chen did not know about it?
+
+
+
+
+
+Kythyria Tieran  February 14, 2020
+
+
+  0  Collapse this comment
+Copy link
+The usual solution to worrying about users patching files unexpectedly (or having to update a resource in the middle of a really big one) in game engine land is a union filesystem like approach: search multiple locations for the requested resource and return the first one found. Updates and mods just add to the front of the list of places to start.
+The "update really huge packfiles" thing is probably not as much a concern for...Read moreThe usual solution to worrying about users patching files unexpectedly (or having to update a resource in the middle of a really big one) in game engine land is a union filesystem like approach: search multiple locations for the requested resource and return the first one found. Updates and mods just add to the front of the list of places to start.
+The “update really huge packfiles” thing is probably not as much a concern for the Windows Update team as it is for, say, Steam: WU only has to modify loose files or images whose format is known to it, not dozens of assorted agglomerations.
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  February 14, 2020
+
+
+  0  Collapse this comment
+Copy link
+I guess with the quality format there’s no way to say “I need the original file from the server.”
+We occasionally have disk corruption punch holes in files. Would be nice if sfc /scannow could figure out how to repair them.
+
+
+
+
+
+Me Gusta  February 14, 2020
+
+
+  0  Collapse this comment
+Copy link
+Dism’s /Cleanup-Image option doesn’t do the trick? This contains all of the options to check the Windows component store (WinSxS directory) and recover files from Windows Update if needed.
+Since the majority of the files in the Windows directory is just hard linked to WinSxS then it would be surprising if using Dism didn’t fix this.
+
+
+
+
+
+Piotr Siódmak  February 14, 2020
+
+
+  0  Collapse this comment
+Copy link
+What if it’s Windows Update that is busted? I also tried to recover from a corruption (probably the user rebooted during Windows Update’s “do not shut down” phase). But it never worked – DISM claimed that the repair source (WIM from Windows ISO) files could not be found.
+
+
+
+
+
+Me Gusta  February 14, 2020
+
+
+  0  Collapse this comment
+Copy link
+It probably couldn't find those files. You see, the WIM file on the installation media is set at a certain patch level. For the Windows 1903 image it is 10.0.18362.30, for the 1909 image it is 10.0.18363.411. After the Feb 2020 cumulative update, the current version of Windows is 10.0.18363.657. So if I was to detect corruption and it was a file that was updated in the 14th Jan 2020 update (18363.592), how could either...Read moreIt probably couldn’t find those files. You see, the WIM file on the installation media is set at a certain patch level. For the Windows 1903 image it is 10.0.18362.30, for the 1909 image it is 10.0.18363.411. After the Feb 2020 cumulative update, the current version of Windows is 10.0.18363.657. So if I was to detect corruption and it was a file that was updated in the 14th Jan 2020 update (18363.592), how could either the 1903 or 1909 installation media have the 14th Jan 2020 versions of this file?
+When you use a source for the repair source, it must be updated to the same patch level as the system you are trying to repair. This is actually documented where the “Configure a Windows Repair Source” states that the .WIM file must be updated to the latest cumulative update.
+Read less
+
+
+
+
+
+
+
+Me Gusta  February 17, 2020
+
+
+  0  Collapse this comment
+Copy link
+Also, a version of Windows patched to say 10.0.18362.628 may not be able by Windows 10.0.18362.657 for the same reason.
+If a file was updated in .628 and then in .657, the version of the file that you need for .628 may not exist. So you need to have the update for .628 installed.
+As I said in the other post, you don't have to care about writing it back to the .WIM file. DISM...Read moreAlso, a version of Windows patched to say 10.0.18362.628 may not be able by Windows 10.0.18362.657 for the same reason.
+If a file was updated in .628 and then in .657, the version of the file that you need for .628 may not exist. So you need to have the update for .628 installed.
+As I said in the other post, you don’t have to care about writing it back to the .WIM file. DISM can use a shared Windows directory as a recovery source, it basically only needs the WinSxS directory.
+Read less
+
+
+
+
+
+
+
+Me Gusta  February 17, 2020
+
+
+  0  Collapse this comment
+Copy link
+@Piotr:
+There is no DISM command to do it automatically and WU and WSUS is only really designed to keep a live version of Windows up to date.
+However it is easier to get the patch from the update catalogue than you think. Since Microsoft moved to monthly rollups, all you need is the one listed for the version that you want. This is documented, search for Windows 10 Update History or Windows 8.1 Update...Read more@Piotr:
+There is no DISM command to do it automatically and WU and WSUS is only really designed to keep a live version of Windows up to date.
+However it is easier to get the patch from the update catalogue than you think. Since Microsoft moved to monthly rollups, all you need is the one listed for the version that you want. This is documented, search for Windows 10 Update History or Windows 8.1 Update History. If you are using Windows 7 after EOL then you can get updates for this version too, just search for Windows 7 Update History, you can also use this to get the January 2020 update which is the last public update for Windows 7 without the extended license.
+Anyway, what this means is that you normally only need two, maybe three updates to get Windows to the latest patch.
+On top of this, DISM accepts a directory as input for the /PackagePath option of /Add-Package. So if I was to create an image exclusively to use as a recovery source I would basically use the following two lines in a batch (.bat) file.
+dism /apply-image /imagefile:install.wim /applydir:J:\ /index:6
+dism /image:J:\ /add-package /packagepath:x64
+Since it is a recovery source, you don’t have to care about writing it back to the .WIM file, so just applying it to an external drive or some other location that you can share is good enough. However, the /packagepath option is pointing to the x64 directory. I am applying this to an x64 version of Windows, and I just put the updates for Windows in that x64 directory. It will go through the updates one by one and apply them.
+But in general there is no automation for this part which is why I wrote a bunch of scripts for this.
+Read less
+
+
+
+
+
+
+
+Piotr Siódmak  February 16, 2020
+
+
+  0  Collapse this comment
+Copy link
+Is there a DISM command to do it automatically? I recall that the docs/support article talks about manually downloading every patch from the catalog and applying them individually with DISM. Can I go to a working system with version 1.2.3 and tell it to take an RTM version WIM and patch it up to 1.2.1? The case here is that a user has broken their system (actually a team CI server) and we have to...Read moreIs there a DISM command to do it automatically? I recall that the docs/support article talks about manually downloading every patch from the catalog and applying them individually with DISM. Can I go to a working system with version 1.2.3 and tell it to take an RTM version WIM and patch it up to 1.2.1? The case here is that a user has broken their system (actually a team CI server) and we have to do it fast. Unfortunately, because of the “WIM needs patching” thing we suspected, the quickest thing was always nuke, reinstall, apologise to the user that they have to reconfigure their CI from scratch (dev teams don’t do backups).
+Can I use a newer version WIM on an older version system? How to automatically update a WIM (tell windows update to do it instead of figuring out which patches from the catalog do I need and downloading them) to have it always ready to go on a network share?
+Read less

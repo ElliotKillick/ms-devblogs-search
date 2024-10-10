@@ -1,0 +1,368 @@
+cheong00  April 26, 2020
+
+
+  0  Collapse this comment
+Copy link
+I think this is pretty common for Games that do self update to do so, to update it’s copy of payload in ProgramData.
+Still pretty unsure what is the correct way to do self-updates. We could use a service that runs in higher privilege, but we don’t want to have bazillion updater services installed.
+
+
+
+
+
+Antonio Rodríguez  April 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+The very first versions of Google Chrome installed themselves into the Program Data directory, no doubt to work around the unpopular elevation prompts of Windows Vista. Even worse, the installers didn't even allow you to select a target directory. Many friends of mine had a hard time understanding why placing an executable in a well-kown, fixed, world-writable directory was a big security risk. How easy was it to create a simple worm that silently replaced...Read moreThe very first versions of Google Chrome installed themselves into the Program Data directory, no doubt to work around the unpopular elevation prompts of Windows Vista. Even worse, the installers didn’t even allow you to select a target directory. Many friends of mine had a hard time understanding why placing an executable in a well-kown, fixed, world-writable directory was a big security risk. How easy was it to create a simple worm that silently replaced chrome.exe with a copy of itself?
+Read less
+
+
+
+
+
+
+
+Kalle Niemitalo  April 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+The ACLs of C:\ProgramData and C:\Users\Public allow interactive users to create subdirectories. I see several subdirectories under those have more restrictive ACLs and have presumably been created and restricted by some installer software. A user might be able to create the subdirectory and plant a file there before the installer is run.
+How am I supposed to defend against that if I am implementing such an installer?
+Can a user also create a file in a directory...Read moreThe ACLs of C:\ProgramData and C:\Users\Public allow interactive users to create subdirectories. I see several subdirectories under those have more restrictive ACLs and have presumably been created and restricted by some installer software. A user might be able to create the subdirectory and plant a file there before the installer is run.
+How am I supposed to defend against that if I am implementing such an installer?
+Can a user also create a file in a directory whose current ACL does not allow this, by using a directory handle that was opened with an earlier ACL? Although CreateFile and CreateFile2 do not take a directory handle, NtCreateFile does via its ObjectAttributes parameter.
+Read less
+
+
+
+
+
+
+
+Stefan Kanthak  April 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+The user can add a reparse point (junction) to the directory he created. Unless the installer removes the reparse point, it performs all operations on the target of the junction. After it has finished, the user can remove the reparse point and create rogue files with the same name as the installer created files.
+
+
+
+
+
+Stefan Kanthak  April 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+@Kalle
+Junctions and symlinks have the same semantics: reparse points are evaluated by the filesystem (filter) driver, ie. on the SMB (or NFS, FTP, HTTP) server in case of remote access.
+The difference: while junctions are always evaluated, symlinks are per default only evaluated for local accesses, to local and remote targets, and they are per default not evaluated for remote accesses.
+This behaviour is controlled by 4 registry entries, here shown with their default...Read more@Kalle
+Junctions and symlinks have the same semantics: reparse points are evaluated by the filesystem (filter) driver, ie. on the SMB (or NFS, FTP, HTTP) server in case of remote access.
+The difference: while junctions are always evaluated, symlinks are per default only evaluated for local accesses, to local and remote targets, and they are per default not evaluated for remote accesses.
+This behaviour is controlled by 4 registry entries, here shown with their default values:
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem]
+"SymlinkLocalToLocalEvaluation"=dword:1
+"SymlinkLocalToRemoteEvaluation"=dword:1
+"SymlinkRemoteToLocalEvaluation"=dword:0
+"SymlinkRemoteToRemoteEvaluation"=dword:0
+Junctions were introduced with Windows 2000 and can be created by unprivileged users, so restricting their creation or evaluation would be a breaking change and introduce an incompatibility.
+Symlinks were introduced with Vista, together with a dedicated new privilege SE_CREATE_SYMBOLIC_LINK_PRIVILEGE (assigned only to the “Administrators” group and disabled per default) which needs to be enabled to create them.
+JFTR: a user with physical access can boot into Windows RE and create symlinks there, out-of-the-box. To prevent this, the Administrator has to disable the login for unprivileged users for Windows RE and PE
+JFTR-2: s/he can also boot into safe mode, where the builtin “Administrator” (which has NO password out-of-the-box) is enabled when no other local user is member of the “Administrators” group, …
+Read less
+
+
+
+
+
+
+
+Paradice .  April 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+Yeah, but the user requires administrator (or developer) access to create the junction. And if you have administrator access, you’ve already won. You don’t need to continue playing ‘tricks’ with same-named files. Just do whatever you want.
+
+
+
+
+
+Joshua Hudson  April 25, 2020
+
+
+  0  Collapse this comment
+Copy link
+Our world is changing.
+I can, today, without admin rights and without an elevated command prompt, create symbolic links.
+Microsoft still refuses vulnerability reports involving symbolic link racing, but that's not forever. Soon there will be a killer app that wants the switch thrown for all users to be able to create symbolic links. Oh wait, we already have it. It's npm. Soon there will be a killer app for ordinary users that wants that switch thrown...Read moreOur world is changing.
+I can, today, without admin rights and without an elevated command prompt, create symbolic links.
+Microsoft still refuses vulnerability reports involving symbolic link racing, but that’s not forever. Soon there will be a killer app that wants the switch thrown for all users to be able to create symbolic links. Oh wait, we already have it. It’s npm. Soon there will be a killer app for ordinary users that wants that switch thrown so all users can create symbolic links, or soon Microsoft will have to deal with an active attack going right for the developers depending on the fact that switch is thrown for almost all developers now.
+These vulnerabilities are real. They need to be fixed for real.
+Read less
+
+
+
+
+
+
+
+Kalle Niemitalo  April 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+Creating a directory junction (MKLINK /J) does not require the same privilege as creating a directory symbolic link (MKLINK /D). This may be justified by the difference in semantics when accessed over SMB.
+
+
+
+
+
+Paradice .  April 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+There is no reply button for Stefan's incorrect comment. AFAIK creating symlinks requires either Administrator access (on every version of Windows and including Windows 10 up until the Creator's Update) or Developer Mode to be enabled (on Windows 10 Creator's Update onwards). Or, I suppose, editing the "Create symbolic links" group policy setting. Since the latter options both require Administrator access to perform anyway, effectively the requirement boils down to "have Administrator access".
+Here you...Read moreThere is no reply button for Stefan’s incorrect comment. AFAIK creating symlinks requires either Administrator access (on every version of Windows and including Windows 10 up until the Creator’s Update) or Developer Mode to be enabled (on Windows 10 Creator’s Update onwards). Or, I suppose, editing the “Create symbolic links” group policy setting. Since the latter options both require Administrator access to perform anyway, effectively the requirement boils down to “have Administrator access”.
+Here you go Stefan. To remove any doubt, here’s the documentation for the Create Symbolic Links security setting: https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/create-symbolic-links – note this statement in particular: By default, members of the Administrators group have this right.
+I now wait to see if Stefan can produce a method of creating a junction which doesn’t require elevated access at any stage in the process, or if instead he’ll reply and call me names again without offering any evidence for his theory.
+Read less
+
+
+
+
+
+
+
+Stefan Kanthak  April 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+OUCH: kids which are even unable to write their name are clueless!
+Creating a junction requires NO privilege, every user can do this!
+
+
+
+Mystery Man  April 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+Isn’t there a user-local PATH variable?
+
+
+
+
+
+Stefan Kanthak  April 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+Of course, and it is appended to the system-global PATH variable during user logon, when the initial environment block is built.
+There's also an application-specific PATH, which is appended or prepended when an application is started via ShellExecute().
+BUT: unprivileged users can only set their own environment variables, they can't set them for other users, or for applications run by other users.
+Every user can but add user environment variables windir, SystemDrive, SystemRoot, ProgramData, ProgramFiles, ProgramFiles(x86),...Read moreOf course, and it is appended to the system-global PATH variable during user logon, when the initial environment block is built.
+There’s also an application-specific PATH, which is appended or prepended when an application is started via ShellExecute().
+BUT: unprivileged users can only set their own environment variables, they can’t set them for other users, or for applications run by other users.
+Every user can but add user environment variables windir, SystemDrive, SystemRoot, ProgramData, ProgramFiles, ProgramFiles(x86), CommonProgramFiles and CommonProgramFiles(x86) which then override the programmatically generated environment variables of the same name.
+Now open a command prompt, run FTYPE and see how many command lines are still registered using one of these environment variables, despite that all these paths are constant and can’t be changed any more (the prebuilt generalized system images provided by Microsoft for deployment must be run from a volume with drive letter C:), which makes this b(rainde)ad practice a perfect example of cargo cult.
+Then continue with all COM classes, especially those registered by Windows Defender, which Microsoft claims to be tamper protected … and (ab)use them to inject arbitrary DLLs (located on a network share) into Google Chrome, Outlook, Internet Explorer, File Explorer, Edge Chromium, Opera, Brave, Vivaldi, … plus to disable the real-time protection for downloaded content, attachments, ….
+Read less
+
+
+
+
+
+
+
+Jernej Simončič  April 23, 2020
+
+
+  0  Collapse this comment
+Copy link
+Keep in mind that while clean Windows installs will always have their %SYSTEMDRIVE% as C:, upgrades won’t. My own Windows 10 install boots off W:, and my C: is currently a card reader slot.
+
+
+
+
+
+Gacel Perfinian  April 23, 2020
+
+
+  0  Collapse this comment
+Copy link
+Is this just Windows messing up an upgrade or you intentionally coax it? Also, are there programs simply not working due to this?
+
+
+
+
+
+Stefan Kanthak  April 23, 2020
+
+
+  0  Collapse this comment
+Copy link
+Before Windows 2000, drive letters ware assigned at every boot (using the well-known algoritm), so adding/removing a drice or partition could result in a system which booted, but failed at user logon.
+Before Windows Vista, the drive letters ware assigned during setup, again using the well-known algorithm.
+See https://support.microsoft.com/en-us/kb/51978, https://support.microsoft.com/en-us/kb/101703 and https://support.microsoft.com/en-us/kb/234048, plus https://support.microsoft.com/en-us/kb/223188 and https://support.microsoft.com/en-us/kb/249321
+The "Windows" drive (which hosts the "Windows" and the "Program Files" directories) could therefore get an arbitrary letter.
+Programs...Read moreBefore Windows 2000, drive letters ware assigned at every boot (using the well-known algoritm), so adding/removing a drice or partition could result in a system which booted, but failed at user logon.
+Before Windows Vista, the drive letters ware assigned during setup, again using the well-known algorithm.
+See https://support.microsoft.com/en-us/kb/51978, https://support.microsoft.com/en-us/kb/101703 and https://support.microsoft.com/en-us/kb/234048, plus https://support.microsoft.com/en-us/kb/223188 and https://support.microsoft.com/en-us/kb/249321
+The “Windows” drive (which hosts the “Windows” and the “Program Files” directories) could therefore get an arbitrary letter.
+Programs typically register their components, command lines etc. with fully-qualified paths, so upgrades need to preserve the drive letters.
+There  were programs which failed to install without a C: drive (I ran all my systems without C: assigned to detect such crap), or created a directory PROGRA~1 on the system drive, but I haven’t seen one for years.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+April 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+If you modify an environment variable, you’re just attacking yourself. It’s not a security vulnerability that you can make your own life miserable.
+
+
+
+
+
+Stefan Kanthak  April 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+That's WAY to simple!
+For which good reason do (at least some of the) applications and DLLs shipped with Windows depend on the environment variables named above?
+There's absolutely NO technical necessity to refer environment variables; implemented properly, they use the functions provided by the Windows API to retrieve the various paths or names!
+Denial of service is a well-known vulnerability: would you like the Windows-powered medical gear in any hospital to fail due to...Read moreThat’s WAY to simple!
+For which good reason do (at least some of the) applications and DLLs shipped with Windows depend on the environment variables named above?
+There’s absolutely NO technical necessity to refer environment variables; implemented properly, they use the functions provided by the Windows API to retrieve the various paths or names!
+Denial of service is a well-known vulnerability: would you like the Windows-powered medical gear in any hospital to fail due to an environment variable set in a logon script, for example?
+JFTR: reducing the attack surface is defense in depth and limits the chance not just for Mr. Murphy!
+Read less
+
+
+
+
+
+
+
+Mystery Man  April 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+I appreciate your enthusiasm, Stefan. I’m sure you’ll become a great developer once you grow up.
+But things are much more complex than you imagined today. Developers have to deal with not just code logic, but also office politics. And they don’t always develop with a full-fledged programming language.
+
+
+
+
+
+Mystery Man  April 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+If only things were that simple, Mr. Chen. Alas.
+Rest assured, however, that I won’t be attacking myself.
+
+
+
+
+
+Joshua Hudson  April 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+We build paths from the environment variables because localization. We don’t know if the path names will change again on foreign-language builds, but the environment variable names won’t. But if you can manage to change the definition of an environment variable of a windows service, then the game is already over.
+
+
+
+
+
+Stefan Kanthak  April 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+This is acceptable only in batch scripts, since there's no other way to evaluate paths like %USERPROFILE%, %ALLUSERSPROFILE%, %windir%, %SystemRoot%, %TEMP% etc., or names like %USERNAME%, %COMPUTERNAME%, ...
+This is but NOT ACCEPTABLE in applications, since you can get all these values from functions of the Windows API.
+Continued, since the blog software fails to offer a reply beyond depth 5
+OUCH!
+Please ask Raymond to explain that these environment variables DON'T control the locations/paths (with the...Read moreThis is acceptable only in batch scripts, since there’s no other way to evaluate paths like %USERPROFILE%, %ALLUSERSPROFILE%, %windir%, %SystemRoot%, %TEMP% etc., or names like %USERNAME%, %COMPUTERNAME%, …
+This is but NOT ACCEPTABLE in applications, since you can get all these values from functions of the Windows API.
+Continued, since the blog software fails to offer a reply beyond depth 5
+OUCH!
+Please ask Raymond to explain that these environment variables DON’T control the locations/paths (with the exception of TEMP and TMP). It’s the other way ’round: the values of these environment variables are determined from the result of GetUserProfileDirectory(), GetUserName(), GetSystemDirectory(), SHGetFolderPath(), SHGetKnownFolderPath() etc.
+I recommend to find and read some of Raymond’s old posts about the (user) shell folders and their (presumed) registry key(s), especially https://devblogs.microsoft.com/oldnewthing/20031103-00/?p=41973
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  April 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+On the other hand, I get really annoyed when I discover certain applications won’t honor it when I change the paths in environment variables. Changing %USERNAME% and %USERPROFILE% is a decent way to do the application-initialization step for a batch-job user. Changing %TEMP% comes up a lot. Changing %SystemRoot% is pretty useless though.
+
+
+
+Nathan Williams  April 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+*cough* C:\Python27 *cough*
+
+
+
+
+
+Zander  April 27, 2020
+
+
+  0  Collapse this comment
+Copy link
+*cough* pythonclock.org *cough*
+
+
+
+
+Marek Słowikowski  April 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+All of your posts have no sense. Why do you write them? Please, do not do this. Write your own blog but here should be presented words about MS Technology, not your mental problems.
+
+
+
+
+
+Jan Ringoš  April 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+Your comment has no sense. Please don’t write any more comments and let the rest of us enjoy Raymond’s ruminations.

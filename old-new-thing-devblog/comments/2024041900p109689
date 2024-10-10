@@ -1,0 +1,21 @@
+Neil Rashbrook  April 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+I’m not convinced you need a whole mutex just to protect the “has value” state, just an atomic boolean (either with the default or custom memory barriers; sadly you can’t apply memory barriers to the “has value” part of a std::optional). Although maybe part 4 will use the mutex for something else…
+
+
+
+
+
+紅樓鍮  April 19, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+Not something relevant to the original problem, but my first reaction after reading the code was that the combination of the  and the  can probably be replaced with a single  (provided you tolerate the use of raw atomics), which would likely be a lock-free atomic on any realistic platform. Then I came to the dreadful realization that  doesn't exist. That even though  are in the standard library, and  did...Read moreNot something relevant to the original problem, but my first reaction after reading the code was that the combination of the mutex and the option<string> can probably be replaced with a single atomic<unique_ptr<string>> (provided you tolerate the use of raw atomics), which would likely be a lock-free atomic on any realistic platform. Then I came to the dreadful realization that atomic<unique_ptr<T>> doesn’t exist. That even though atomic<{shared,weak}_ptr<T>> are in the standard library, and atomic_unique_ptr did appear in Sutter’s original paper, N4058. Somehow P0718 (which I presume is what brought atomic<{shared,weak}_ptr<T>> into C++20) forgot about atomic<unique_ptr<T>> completely.
+(I know it is possible to use the raw atomic<string *> for this purpose, provided you also tolerate the use of raw pointers that need to be manually freed.)
+Bonus chatter: Even without going for a lock-free atomics-based solution, I wouldn’t use std::mutex if I can use dr-m/atomic_sync, because last time I checked the std::mutex is 40 bytes large on x86-64 Linux and 80 bytes large on x64 Windows, and since no one will break the ABI, it looks like it’ll stay that way for quite some time.
+Edit: After a bit of thinking I suspect the reason for not including atomic<unique_ptr<T>> is due to it not being able to support the full atomic API: load can’t be implemented for the move-only unique_ptr, and compare_exchange_* mostly don’t make sense either. But other methods on it would still be valuable in my opinion, especially exchange.
+Read less

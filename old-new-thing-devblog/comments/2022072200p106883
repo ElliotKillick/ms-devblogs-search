@@ -1,0 +1,25 @@
+Jacob Manaker  July 22, 2022
+
+
+  0  Collapse this comment
+Copy link
+At first sight, the problem really has nothing to do with event handling.  Any WinRT code that assumes a specific thread calls the destructor is broken, because you have no control over reference counts.
+One could equally well posit a collection type `FancyCollection` with a cache that updates asynchronously on another thread and a custom `GridView` that uses a `FancyCollection` to store `ViewModel`s.  You pass your `ViewModel` to that custom `GridView`; then...Read moreAt first sight, the problem really has nothing to do with event handling.  Any WinRT code that assumes a specific thread calls the destructor is broken, because you have no control over reference counts.
+One could equally well posit a collection type `FancyCollection` with a cache that updates asynchronously on another thread and a custom `GridView` that uses a `FancyCollection` to store `ViewModel`s.  You pass your `ViewModel` to that custom `GridView`; then the cache thread updates and stores your `ViewModel` in the cache.  Eventually, the view gets torn down.  Finally, the cache updates and releases your `ViewModel` on the cache thread.  In that scenario, everything works by design, but you’re still getting destructed on a private thread that you have no access to and didn’t even know existed.
+OTOH, you can superficially control destructor threading by putting an object inside an STA.  I guess your point is that the STA doesn’t protect against multithreading “calls from inside the house”: because the WinRT async implementation does not coordinate with COM apartments, any thread you instantiate (via, say, `resume_foreground`) can call the destructor, and you need to protect against that even in an STA?
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+July 22, 2022
+
+
+  0  Collapse this comment
+Copy link
+The point of  is to let you have control between the time the reference count goes to zero and the execution of the destructor. When the cache releases the  on the cache thread, C++/WinRT calls your  to say "Normally, I would just destruct this object right away, but instead, I'm going to give you the last reference to the object (in the form of a ), and you can manage its destruction...Read moreThe point of final_release is to let you have control between the time the reference count goes to zero and the execution of the destructor. When the cache releases the ViewModel on the cache thread, C++/WinRT calls your final_release to say “Normally, I would just destruct this object right away, but instead, I’m going to give you the last reference to the object (in the form of a unique_ptr), and you can manage its destruction yourself.” So everybody is happy. The cache can release the object on any thread it likes, and the ViewModel can move the object to the UI thread to run the destructor.
+Read less

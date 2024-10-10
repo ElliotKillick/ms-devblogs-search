@@ -1,0 +1,92 @@
+Acc Reg  August 27, 2024
+
+
+  0  Collapse this comment
+Copy link
+Performance question here, Didn’t it will costs more NtWaitForSingleObject system call instead of one NtWaitForMultipleObjects?
+
+
+
+
+
+Jan Ringoš  August 24, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+This post has finally pushed me to investigate how the Vista+ Thread Pool manages to (on Windows 8+) wait for more than 64 events on a single thread. I've been wondering if I can reuse the underlying tech (NT API) to use it with custom I/O Completion Port, outside of the system Thread Pool. It turns out it's pretty simple.
+Is there any particular reason this functionality haven't been lifted to Win32 API for general use?Read moreThis post has finally pushed me to investigate how the Vista+ Thread Pool manages to (on Windows 8+) wait for more than 64 events on a single thread. I’ve been wondering if I can reuse the underlying tech (NT API) to use it with custom I/O Completion Port, outside of the system Thread Pool. It turns out it’s pretty simple.
+Is there any particular reason this functionality haven’t been lifted to Win32 API for general use?
+People are still battling with the MAXIMUM_WAIT_OBJECTS limit.
+Read less
+
+
+
+
+
+
+
+Luca Bacci  August 25, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+I believe there's a good reason for the MAXIMUM_WAIT_OBJECTS limit. The system doesn't know what arguments have changed between two consecutive calls to WaitForMultipleObjects(Ex); you may have just added (or removed) one HANDLE, or you may have replaced ALL HANDLEs. As such the system has to scan every passed HANDLE in each invocation. In addition the system has to remove the waits on return and re-arm them on the next call (because some waits have...Read moreI believe there’s a good reason for the MAXIMUM_WAIT_OBJECTS limit. The system doesn’t know what arguments have changed between two consecutive calls to WaitForMultipleObjects(Ex); you may have just added (or removed) one HANDLE, or you may have replaced ALL HANDLEs. As such the system has to scan every passed HANDLE in each invocation. In addition the system has to remove the waits on return and re-arm them on the next call (because some waits have side-effects, e.g mutexes). All of that is costly and to lower the overhead you spread the arguments in batches and make multiple parallel invocations.
+With IOCP on the other hand you push wait items and the system pops them on completion. The system has to do much less work that way. That said, IOCPs are different in even more ways, like being able to wake up one thread only from a set of waiting threads.
+Read less
+
+
+
+
+
+
+
+Acc Reg  August 27, 2024
+
+
+  0  Collapse this comment
+Copy link
+Why you would want to do two consecutive calls of WaitForMultipleObjects(Ex)? Isn’t Kernel handles are not reference-counted?
+
+
+
+
+
+紅樓鍮  August 26, 2024
+
+
+  1  Collapse this comment
+Copy link
+ operates like  and  on Unix, and the limitations you mentioned are also limitations of  and . Problem is, , Linux's rough equivalent to IOCP, supports most types of file descriptors that exist on Linux, including eventfd; IOCP on the other hand only supports a small set of operations that are mostly just reading, writing and accepting connections, and that's despite Jan's discovery that the NT kernel apparently does contain all necessary...Read moreWaitForMultipleObjects operates like select and poll on Unix, and the limitations you mentioned are also limitations of select and poll. Problem is, epoll, Linux’s rough equivalent to IOCP, supports most types of file descriptors that exist on Linux, including eventfd; IOCP on the other hand only supports a small set of operations that are mostly just reading, writing and accepting connections, and that’s despite Jan’s discovery that the NT kernel apparently does contain all necessary facilities to use events and mutexes with IOCP after all.
+Read less
+
+
+
+
+
+
+
+Jan Ringoš  August 25, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+The reasoning on the limit makes sense. Which makes it even more curious why there’s no API that would allow applications to be more efficient. And yes, assigning handles to IOCP solves it only partially, as it, for example, can’t handle acquiring Mutexes.
+
+
+
+紅樓鍮  August 23, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+When I first learned about threads in C++ it took me a bit of time to wrap my head around the fact that, given , you can simply call  to wait for all of them to finish despite the fact that the threads themselves may finish in any order. Of course, with  even explicitly calling  has become unnecessary.
+Read moreWhen I first learned about threads in C++ it took me a bit of time to wrap my head around the fact that, given std::thread t(…), u(…), v(…);, you can simply call t.join(); u.join(); v.join(); to wait for all of them to finish despite the fact that the threads themselves may finish in any order. Of course, with std::jthread even explicitly calling join() has become unnecessary.
+Read less
+
+
+
+
+var ajaxurl_comments = 'https://devblogs.microsoft.com/oldnewthing/wp-admin/admin-ajax.php';
+var parent_post_id = 110169;
+var cpage = 1;

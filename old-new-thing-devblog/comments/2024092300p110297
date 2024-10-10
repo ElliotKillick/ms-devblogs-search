@@ -1,0 +1,79 @@
+Joe Beans  September 26, 2024
+
+
+  0  Collapse this comment
+Copy link
+I propose a corollary: any method that receives a collection should treat null as an empty collection.
+
+
+
+
+
+Rob Paveza  September 24, 2024
+
+
+  0  Collapse this comment
+Copy link
+One question I have here is: how might you address fixing `CryptographicBuffer`?
+I think that the four versions that produce the null buffer could likely just be changed to return the empty result, because you're going from an error case to a success-but-empty case. But, it's a functional change, and it makes me think back to all of the work that you've done historically to ensure compatibility.
+Another option might be to deprecated the methods and introduce...Read moreOne question I have here is: how might you address fixing `CryptographicBuffer`?
+I think that the four versions that produce the null buffer could likely just be changed to return the empty result, because you’re going from an error case to a success-but-empty case. But, it’s a functional change, and it makes me think back to all of the work that you’ve done historically to ensure compatibility.
+Another option might be to deprecated the methods and introduce new ones. But all of the existing methods already have “the good names.”
+Yet another is just to leave it as-is and say “this is inconsistent but sorry.” That might be the actual choice right now — but do you think it’s the best?
+Read less
+
+
+
+
+
+
+
+Martin Ba  September 24, 2024
+
+
+  2  Collapse this comment
+Copy link
+At least one of the things where the idioms in C++ still shine.
+If a function returns a collection by value (or by const ref in case of getters), all it can do is return a collection, no null shenanigans.
+And thanks to move-semantics and [N]RVO, it should generally be pretty cheap to return by value.
+
+
+
+
+
+Kevin Norris  September 23, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+Personally, I'm a big fan of Rust's decision to make Option and Result iterable. They both yield one object on the happy path, and zero objects on the unhappy path, which can then be composed with the rest of Rust's iterator calculus. This may sound like an awkward and fiddly way of doing things... except in cases where the underlying object either is a collection, or you plan to convert it into a collection in...Read morePersonally, I’m a big fan of Rust’s decision to make Option and Result iterable. They both yield one object on the happy path, and zero objects on the unhappy path, which can then be composed with the rest of Rust’s iterator calculus. This may sound like an awkward and fiddly way of doing things… except in cases where the underlying object either is a collection, or you plan to convert it into a collection in some way. Then you call flatten() or flat_map() (respectively) and do more iterator calculus from there, exactly as if you really were handed an empty collection on the unhappy path in the first place.
+The simplest example is (given value is an Option-al Iterable) value.into_iter().flatten().collect(), which peels off the Option wrapper, turns None into an empty collection, and optionally converts one collection type into another (e.g. converting Vec to boxed slice) if the type annotations indicate that this should be done. You can (and probably would, in practice) replace collect() with a more complicated chain of iterator adapters if desired, this is just a trivial example. You can also skip collect() and hand the whole thing directly to a for loop (but for simple operations, map() is probably easier to read than a for loop).
+Read less
+
+
+
+
+
+
+
+紅樓鍮  September 24, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+That's not what Rust (like all strongly-typed functional programming languages) is fundamentally about, though. In Rust a value must be explicitly made "nullable" by giving it a type of , and a value of type  can never be "null". Good programming practice in Rust involves properly typing infallible computations as  (or at least ) as opposed to . A well-designed Rust library will not have functions returning s all over the place, regardless...Read moreThat’s not what Rust (like all strongly-typed functional programming languages) is fundamentally about, though. In Rust a value must be explicitly made “nullable” by giving it a type of Option<T>, and a value of type T can never be “null”. Good programming practice in Rust involves properly typing infallible computations as T (or at least Result<T, !>) as opposed to Option<T>. A well-designed Rust library will not have functions returning Options all over the place, regardless of how convenient it is to consume them.
+Read less
+
+
+
+
+
+
+
+Kevin Norris  September 25, 2024
+
+
+  0  Collapse this comment
+Copy link
+It is not either-or. There are situations where the correct API type is an Option of some kind (to distinguish between e.g. "there are no active frobnicators right now" and "frobnicator support is disabled, so there is no list of active frobnicators"), but also a particular caller wants to map None to the empty collection (and a different caller might not want to do that). Option::into_iter() lets both callers get what they want with minimal...Read moreIt is not either-or. There are situations where the correct API type is an Option of some kind (to distinguish between e.g. “there are no active frobnicators right now” and “frobnicator support is disabled, so there is no list of active frobnicators”), but also a particular caller wants to map None to the empty collection (and a different caller might not want to do that). Option::into_iter() lets both callers get what they want with minimal fuss.
+Read less

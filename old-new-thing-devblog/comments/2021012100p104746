@@ -1,0 +1,128 @@
+Joshua Hudson  January 21, 2021
+
+
+  0  Collapse this comment
+Copy link
+Mind boggles why the garbage is deadly. When ANSI C was new, it allowed falling off the end of an int function so long as the caller didn’t check. Even itamium only faulted when you wrote the value to memory, which you won’t because it’s call-clobbered.
+
+
+
+
+
+Emily Bowman  January 22, 2021
+
+
+  0  Collapse this comment
+Copy link
+If anything, we’re all spoiled these days because the compiler will generally just go ahead and insert a “return 0;” if you just fall off the end of an int-defined function. You have to work pretty hard to corrupt the stack on accident now.
+
+
+
+
+
+紅樓鍮  January 22, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+I thought modern compilers are more aggressive in exploiting undefined behaviors?
+… the compiler will generally just go ahead and insert a “return 0;” if you just fall off the end of an int-defined function.
+If I'm not mistaken, your statement is only applicable to the main function.
+Read moreI thought modern compilers are more aggressive in exploiting undefined behaviors?
+… the compiler will generally just go ahead and insert a “return 0;” if you just fall off the end of an int-defined function.
+If I’m not mistaken, your statement is only applicable to the main function.
+Read less
+
+
+
+
+
+
+
+Kasper Brandt  January 26, 2021
+
+
+  0  Collapse this comment
+Copy link
+Practically speaking it's limited how undefined it can get because the compiler can't see the call site in this case. It needs to emit the function as if it was going to be called with the signature you claimed. The cast itself is valid as long as its cast back to a function pointer compatible with the signature, and since this is happening in an external dll the compiler won't know that there is any...Read morePractically speaking it’s limited how undefined it can get because the compiler can’t see the call site in this case. It needs to emit the function as if it was going to be called with the signature you claimed. The cast itself is valid as long as its cast back to a function pointer compatible with the signature, and since this is happening in an external dll the compiler won’t know that there is any UB.
+Read less
+
+
+
+
+
+
+
+Adam Rosenfield  January 27, 2021
+
+
+  0  Collapse this comment
+Copy link
+Compatible type is defined in C99 §6.2.7, with references to 6.7.2, 6.7.3, and 6.7.5.  It basically means the same type, but with a lot of additional pedantic rules (e.g. enumerations are compatible with an implementation-defined integer type).
+
+
+
+
+
+紅樓鍮  January 26, 2021
+
+
+  0  Collapse this comment
+Copy link
+A pointer to a function of one type may be converted to a pointer to a function of another type and back again……
+which is not what we're doing here.
+If a converted pointer is used to call a function whose type is not compatible with the pointed-to type……
+I'm not sure what "compatible" means here; it could mean ABI-compatible or type-identical or something else.  Unfortunately I couldn't easily find an answer to it on...Read moreA pointer to a function of one type may be converted to a pointer to a function of another type and back again……
+which is not what we’re doing here.
+If a converted pointer is used to call a function whose type is not compatible with the pointed-to type……
+I’m not sure what “compatible” means here; it could mean ABI-compatible or type-identical or something else.  Unfortunately I couldn’t easily find an answer to it on the internet.
+Read less
+
+
+
+
+
+
+
+紅樓鍮  January 26, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+You're right that at a specific ABI boundary there is no notion of "undefined behavior"; everything is defined by registers and memory.
+However, it doesn't apply to the case of undefinedness that is already on the language level.  For example, inside an int-returning function the compiler is free to assume that the closing curly brace is never reached (since that would be UB) and thus for
+<code>
+the compiler may choose not to generate even...Read moreYou’re right that at a specific ABI boundary there is no notion of “undefined behavior”; everything is defined by registers and memory.
+However, it doesn’t apply to the case of undefinedness that is already on the language level.  For example, inside an int-returning function the compiler is free to assume that the closing curly brace is never reached (since that would be UB) and thus for
+int f() {}
+the compiler may choose not to generate even a ret instruction (since it would be “unreachable” anyways).
+On the topic of function pointer casting then, observe that it’s still language-level UB since the correct signature of the function has been declared in the translation unit, and the cast into a contradictory function pointer type is expressed in language-level expressions.
+If you really want to exploit the ABI property of function signature compatibility then, you may have to employ one of 2 ways to circumvent the need for a language-level FP cast, both involving separate compilation:
+
+compile the void-returning function separately, and yet declare it in the consuming file as returning DWORD, and then take its address directly;
+compile QueueUserWorkItem separately (which it already has been), and yet declare QueueUserWorkItem as
+BOOL WINAPI QueueUserWorkItem(
+    void (*)(void *), // !!!
+    void *, DWORD)
+ then pass your function to it directly. Either way there is no suspicious code at the language level, and all fishiness exists at the ABI boundary.  Of course those would still only happen to work under a “dumb” linker; they could break under sufficiently sophisticated LTO for example.
+Read less
+
+
+
+
+
+
+
+Kasper Brandt  January 26, 2021
+
+
+  0  Collapse this comment
+Copy link
+> On the topic of function pointer casting then, observe that it’s still language-level UB since the correct signature of the function has been declared in the translation unit, and the cast into a contradictory function pointer type is expressed in language-level expressions.
+Casting between incompatible function pointers isn't UB in C, it is only UB when the function is called through an incompatible function pointer type.
+From ISO/IEC 9899:2018 Section 6.3.2.3, paragraph 8:
+> A pointer to...Read more> On the topic of function pointer casting then, observe that it’s still language-level UB since the correct signature of the function has been declared in the translation unit, and the cast into a contradictory function pointer type is expressed in language-level expressions.
+Casting between incompatible function pointers isn’t UB in C, it is only UB when the function is called through an incompatible function pointer type.
+From ISO/IEC 9899:2018 Section 6.3.2.3, paragraph 8:
+> A pointer to a function of one type may be converted to a pointer to a function of another type and back again; the result shall compare equal to the original pointer. If a converted pointer is used to call a function whose type is not compatible with the pointed-to type, the behavior is undefined.
+Read less

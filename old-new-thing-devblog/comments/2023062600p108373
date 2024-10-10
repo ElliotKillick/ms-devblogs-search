@@ -1,0 +1,102 @@
+Neil Rashbrook  June 27, 2023
+
+
+  0  Collapse this comment
+Copy link
+I don't know about winrt::when_all, but for Promise.all it's the first exception thrown chronologically, rather than the first async of the list that resolves with an exception. Since I don't know C++ async/await, here's the difference in JavaScript:
+<code>
+as opposed to something like:
+<code>
+Read moreI don’t know about winrt::when_all, but for Promise.all it’s the first exception thrown chronologically, rather than the first async of the list that resolves with an exception. Since I don’t know C++ async/await, here’s the difference in JavaScript:
+Promise.when_all_complete = async function(aPI) {
+  let results = [];
+  for (let promise of aPI) {
+    results.push(await promise);
+  }
+  return results;
+};
+as opposed to something like:
+Promise.all = function(aPI) {
+  return new Promise(async (resolve, reject) => {
+    let promises = [...aPI];
+    for (let promise of promises) {
+      Promise.resolve(promise).catch(reject);
+    }
+    let results = [];
+    for (let promise of promises) {
+      results.push(await promise);
+    }
+    resolve(results);
+  };
+};
+Read less
+
+
+
+
+
+
+
+word merchant  June 27, 2023
+
+
+  0  Collapse this comment
+Copy link
+Nit-picking typo:”Python’s asynchio.gather lets you choose” – should be asyncio.gather.
+I’ve seen next to no Python code setting
+return_exceptions=True
+on the gather, probably because the user then has to iterate through the results and decide what to do with the possibility of multiple exceptions. And there are subtleties with cancellation blissfully unhandled by most code I’ve seen.
+
+
+
+
+
+Jacob Manaker  June 26, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+It really isn't that hard to rewrite when_all_complete for C++17 as a recursive function.  Are we expecting constrained stack space?
+<code>
+Read moreIt really isn’t that hard to rewrite when_all_complete for C++17 as a recursive function.  Are we expecting constrained stack space?
+
+template<typename F, typename... R>
+IAsyncAction wac_tail_rec(std::exception_ptr eptr, F&& first, R&&... rest)
+{
+    try { co_await first; }
+    catch (...) {
+        if (!eptr) eptr = std::current_exception();
+    }
+    if constexpr (sizeof...(rest))
+        wac_tail_rec(std::move(eptr), std::forward<R>(rest)...);
+    else if (eptr)
+        std::rethrow_exception(eptr);
+}
+
+template<typename... A>
+IAsyncAction when_all_complete(A... asyncs) { return wac_tail_rec({}, std::forward<A>(asyncs)...); }
+
+Read less
+
+
+
+
+
+
+
+Jacob Manaker  June 29, 2023
+
+
+  0  Collapse this comment
+Copy link
+This comment aged poorly.
+
+
+
+
+George Tokmaji  June 26, 2023
+
+
+  0  Collapse this comment
+Copy link
+Expansion statements missed C++23 as well.

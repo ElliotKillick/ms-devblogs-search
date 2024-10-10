@@ -1,0 +1,59 @@
+Letao Wang  May 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+I’m guilty of this.  On the other hand, I’m also guilty of writing a COM class factory that doesn’t support this usage pattern (it only succeeded if you CoCreate(CWidget, IWidget), and you can QI the IWidget to IServiceProvider, but it did not succeed if you CoCreate(CWidget, IServiceProvider)).  It was a case of “I had no idea COM could do this”.
+
+
+
+
+
+Henke37  May 23, 2024
+
+
+  0  Collapse this comment
+Copy link
+Yeah, that breaks the rules. A COM object must be consistent about which interfaces it supports.
+
+
+
+
+Ian Boyd  May 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+I thought one of the COM object Identity rules is that anytime you ask for IUnknown, it is required to represent the same object. But if you ask for another interface it can be a separate object.
+But IUnknown has a special, consistent, identity, that must always be the same pointer.
+So I always try to get IUnknown first, then let it spider out from there, as i Query for other Interfaces, and it possibly constructs...Read moreI thought one of the COM object Identity rules is that anytime you ask for IUnknown, it is required to represent the same object. But if you ask for another interface it can be a separate object.
+But IUnknown has a special, consistent, identity, that must always be the same pointer.
+So I always try to get IUnknown first, then let it spider out from there, as i Query for other Interfaces, and it possibly constructs other objects that implement other Interfaces.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+May 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+While it’s true that IUnknown is special, you rarely rely on the special-ness, and if you really need to, you can QI for it at the point you need it. (Which you should be doing in general because you don’t know whether any random IUnknown given to you is the special identity-defining one.)
+
+
+
+
+GL  May 20, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+Another case is when you decide to respond to a QueryInterface by aggregating a stateless helper inner object without caching the inner object. In that case, the inner object must be created for IUnknown, then immediately queried for the desired interface, and have the IUnknown released.
+Last time I checked, the docs say aggregation is not supported for local servers or remote servers. Since it doesn’t say the cross-apartment same-process case, I assume it’s supported —...Read moreAnother case is when you decide to respond to a QueryInterface by aggregating a stateless helper inner object without caching the inner object. In that case, the inner object must be created for IUnknown, then immediately queried for the desired interface, and have the IUnknown released.
+Last time I checked, the docs say aggregation is not supported for local servers or remote servers. Since it doesn’t say the cross-apartment same-process case, I assume it’s supported — and if so, I’ve been wondering the reason of stopping at process boundary…
+Read less

@@ -1,0 +1,130 @@
+Brian Ross  December 20, 2021
+
+
+  0  Collapse this comment
+Copy link
+GetSysColorBrush says the following:
+An application must not register a window class for a window using a system brush. To register a window class with a system color, see the documentation of the hbrBackground member of the WNDCLASS or WNDCLASSEX structures.
+And WNDCLASS/WNDCLASSEX doesn't make any mention of GetSysColorBrush() for .hbrBackground.
+...
+Can we confirm that this is ok?
+WNDCLASS wc;
+wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+...
+It seems strange that it would not be ok - but then what is the GetSysColorBrush warning...Read moreGetSysColorBrush says the following:
+An application must not register a window class for a window using a system brush. To register a window class with a system color, see the documentation of the hbrBackground member of the WNDCLASS or WNDCLASSEX structures.
+And WNDCLASS/WNDCLASSEX doesn’t make any mention of GetSysColorBrush() for .hbrBackground.
+…
+Can we confirm that this is ok?
+WNDCLASS wc;
+wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+…
+It seems strange that it would not be ok – but then what is the GetSysColorBrush warning trying to indicate when registering Window Classes?
+Read less
+
+
+
+
+
+
+
+Sigge Mannen  December 20, 2021
+
+
+  0  Collapse this comment
+Copy link
+I think this was covered by Raymond way back as well. Normally system brushes aren’t released, but they do when a window class registered with one is unregistered.
+At least that’s how i remember it
+
+
+
+
+
+Scarlet Manuka  December 21, 2021
+
+
+  0  Collapse this comment
+Copy link
+Indeed, the documentation for the hbrBackground member of WNDCLASSEX (as pointed to above) says as much:
+“The system automatically deletes class background brushes when the class is unregistered by using UnregisterClass. An application should not delete these brushes.”
+It makes sense that you would not want one of the system brushes to be deleted when your class was unregistered!
+
+
+
+
+
+Tim Weis  December 21, 2021
+
+
+  0  Collapse this comment
+Copy link
+The documentation for GetSysColorBrush has the following remark as well:
+"Although you don't need to delete the logical brush that GetSysColorBrush returns, no harm occurs by calling DeleteObject."
+I'm confused now. So either the documentation wasn't consistently updated as the implementations changed over time, or UnregisterClass does something other than calling DeleteObject on the class background brush. Part of me wants the latter to be true, with a future blog entry detailing "The sad history of UnregisterClass".
+Read moreThe documentation for GetSysColorBrush has the following remark as well:
+“Although you don’t need to delete the logical brush that GetSysColorBrush returns, no harm occurs by calling DeleteObject.”
+I’m confused now. So either the documentation wasn’t consistently updated as the implementations changed over time, or UnregisterClass does something other than calling DeleteObject on the class background brush. Part of me wants the latter to be true, with a future blog entry detailing “The sad history of UnregisterClass”.
+Read less
+
+
+
+
+
+
+
+Chris Iverson  December 21, 2021
+
+
+  0  Collapse this comment
+Copy link
+It's all straightfoward to me.  This is the sequence of events, as I understand it.
+WNDCLASS was created first, documented to use the COLOR constant + 1 to represent a system color.
+If you pass a brush in to RegisterClass, then UnregisterClass will delete the brush when it unregisters that class.  Therefore, YOU shouldn't delete the brush out from under it, it will take care of it for you
+GetSysColorBrush() came later, and was documented as...Read moreIt’s all straightfoward to me.  This is the sequence of events, as I understand it.
+WNDCLASS was created first, documented to use the COLOR constant + 1 to represent a system color.
+If you pass a brush in to RegisterClass, then UnregisterClass will delete the brush when it unregisters that class.  Therefore, YOU shouldn’t delete the brush out from under it, it will take care of it for you
+GetSysColorBrush() came later, and was documented as (I believe) “do not delete the brush object returned”.  You can use the system color brushes to make things quick and easy for you, but don’t modify or delete them, they’re not yours.
+Then people kept doing exactly what Brian does here, and passing in a system color brush to RegisterClass.  Which wound up with the system color brushes getting deleted.
+So they modified DeleteObject to explicitly NOT delete the system color brushes.
+They made a note of that in the GetSysColorBrush documentation, but they didn’t RegisterClass or WNDCLASS documentation, becuase you’re still not supposed to use the system brushes for those.
+However, using them nowadays will likely not break anything, because others broke them many times long ago.
+If you want to adhere to the documentation strictly, just use the constants and cast them, or if the nonsense is that troubling, create your own brush with that color and pass it in.
+Read less
+
+
+
+
+
+
+
+Sigge Mannen  December 21, 2021
+
+
+  0  Collapse this comment
+Copy link
+Man, i’m confused too now 😀 Raymond, can you explain it?
+
+
+
+
+
+Brian Ross  December 21, 2021
+
+
+  0  Collapse this comment
+Copy link
+So what is the best practice here? 🙂
+WNDCLASS wc;
+wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+Is the code that I would want to write… (which avoids the +1/reinterpret_cast nonsense).
+But is this “safe” according to the documentation despite the warning that I quoted in my original post?
+
+
+
+Peter Cooper Jr.  December 20, 2021
+
+
+  0  Collapse this comment
+Copy link
+Raymond also covered this back in 2014: https://devblogs.microsoft.com/oldnewthing/20140305-00/?p=1593
+Honestly I wouldn’t mind a “best-of” “classic article” “rerun” featured every day: there’s a lot of treasure buried in the past, what, almost 18 years of content?

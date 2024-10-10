@@ -1,0 +1,64 @@
+GL  March 15, 2024
+
+
+  0  Collapse this comment
+Copy link
+The suggested best-of-both-worlds is not good:
+template<class U>
+ComPtr(_In_opt_ U *other) throw() :
+  ComPtr(static_cast<T*>(other)) { }
+This will allow construction of, say, ComPtr<IDispatch> from IUnknown * without compiler error. The fix is to remove the static_cast.
+
+
+
+
+
+Neil Rashbrook  March 16, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+If you remove the static cast then you've just made that constructor delegate to itself. While you can add a dummy disambiguation argument to the  constructor, that just makes the error messages blow up, which defeats the object somewhat. There are a number of possible fixes:
+<code>
+Read moreIf you remove the static cast then you’ve just made that constructor delegate to itself. While you can add a dummy disambiguation argument to the T* constructor, that just makes the error messages blow up, which defeats the object somewhat. There are a number of possible fixes:
+
+a static assertion that T is a base class of U
+creating a typedef for T* and replacing the static_cast with a function-style cast, which doesn’t allow downcasting (although unfortunately this does cause more verbose error messages)
+replacing static_cast with the once proposed implicit_cast which also doesn’t allow downcasting
+
+#include <type_traits>
+#include <utility>
+template <class T, class U>
+constexpr T implicit_cast(U&& u) noexcept(std::is_nothrow_convertible_v<U, T>) {
+  return std::forward<U>(u);
+}
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+March 18, 2024
+
+
+  0  Collapse this comment
+Copy link
+Excellent points everyone. I fixed the code so we use a helper function MustDeriveFromT.
+
+
+
+
+
+GL  March 17, 2024
+
+
+  0  Collapse this comment
+Copy link
+You’re absolutely correct, another simple fix (in this case) is to duplicate the body:
+ComPtr(T *ptr) : ptr_{ptr} { InternalAddRef(); }
+
+template <typename U>
+ComPtr(U *other) : ptr_{other} { InternalAddRef(); }

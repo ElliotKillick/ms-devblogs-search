@@ -1,0 +1,113 @@
+Peter L  November 17, 2020
+
+
+  0  Collapse this comment
+Copy link
+Is it because of result gets optimized away, and the move doesn’t actually happen until *after* the erase? The scoped exit ensures it runs after the move, as the stack is unwound?
+
+
+
+
+
+Yehezkel Bernat  November 16, 2020
+
+
+  0  Collapse this comment
+Copy link
+For the removing multiple items example, remove_if suffers from the same issue, it may overwrite some items in the front of the vector so they may get destructed under the lock. Seems like this case requires a home-made algorithm for move-and-remove or filter-out (naming is hard), which does the same as remove_if, but moves all the non-matching items out (including those that the standard remove_if would overwrite)
+
+
+
+
+
+Raymond Chen Author
+December 17, 2020
+
+
+  0  Collapse this comment
+Copy link
+Oops, thanks. Fixed.
+
+
+
+
+Michael Dunn  November 13, 2020
+
+
+  0  Collapse this comment
+Copy link
+I’m guessing that the answer to the exercise is “vector<bool> is weird”.
+
+
+
+
+
+Martin Andersen  November 13, 2020
+
+
+  0  Collapse this comment
+Copy link
+T might not have a move constructor, but an expensive copy constructor which then gets called twice.
+
+
+
+
+
+Raymond Chen Author
+November 13, 2020
+
+
+  0  Collapse this comment
+Copy link
+If T doesn’t have a move constructor, then everything falls apart, because the original will be destructed under the lock by the erase.
+
+
+
+
+
+Martin Andersen  November 18, 2020
+
+
+  0  Collapse this comment
+Copy link
+Right – the bigger picture. I didn’t take that into account 🙁
+
+
+
+Adam Rosenfield  November 13, 2020
+
+
+  0  Collapse this comment
+Copy link
+A related reentrancy problem I've run into is having a ThingManager::clear() function that empties out the list of things under a mutex, where the Thing destructor can call back into ThingManager to access the list of things (IIRC, it was a map instead of a vector, and that accessor was doing some kind of lookup into the map).
+The solution there was to swap the things list with an empty collection under the mutex, then destruct...Read moreA related reentrancy problem I’ve run into is having a ThingManager::clear() function that empties out the list of things under a mutex, where the Thing destructor can call back into ThingManager to access the list of things (IIRC, it was a map instead of a vector, and that accessor was doing some kind of lookup into the map).
+The solution there was to swap the things list with an empty collection under the mutex, then destruct the new collection outside of the mutex.
+Read less
+
+
+
+
+
+
+
+Ivan K  November 12, 2020
+
+
+  0  Collapse this comment
+Copy link
+Well the non-scope_exit version will make more typename T move constructor and more destructor calls in unoptomised builds if you say “auto x = extract(vec, it)”.
+I don’t think there’s a problem with the vector possibly realloc’ing on erase, because won’t properly coded move constructors, etc handle that? The code doesn’t seem to use invalidated iterators due to erase.
+
+
+
+
+
+MGetz  November 12, 2020
+
+
+  0  Collapse this comment
+Copy link
+This reminds me of the explosives handling that the stdlib maintainers must do to ensure that exception guarantees are met for each of those containers. Carefully isolating all the risky business and then letting it explode at a time they can recover (if allowed). Moreover this code isn't immune  will throw if the mutex has any issues... which it can for example if a  is used in code that needs a  instead.
+Long...Read moreThis reminds me of the explosives handling that the stdlib maintainers must do to ensure that exception guarantees are met for each of those containers. Carefully isolating all the risky business and then letting it explode at a time they can recover (if allowed). Moreover this code isn’t immune std::lock_guard will throw if the mutex has any issues… which it can for example if a std::mutex is used in code that needs a std::recursive_mutex instead.
+Long story short: don’t do anything too special in a destructor unless you want to hate yourself. Turn out the lights on anything you exclusively own and get out. But don’t try to release things you don’t own.
+Read less

@@ -1,0 +1,73 @@
+Tom Mason  June 14, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+I think this would work if you treated both variables as a single atomic item, like this (untested):
+<code>
+Read moreI think this would work if you treated both variables as a single atomic item, like this (untested):
+struct TlsManager
+{
+  struct TlsData
+  {
+    DWORD count = 0;
+    DWORD tls = TLS_OUT_OF_INDEXES;
+  };
+
+  std::atomic<TlsData> m_data = {};
+  static_assert(std::atomic<TlsData>::is_always_lock_free);
+
+  DWORD Acquire()
+  {
+    while (true)
+    {
+      TlsData previous = m_data.load();
+      TlsData newData = previous;
+      if (newData.count == 0)
+      {
+        newData.tls = TlsAlloc();
+        THROW_LAST_ERROR_IF(newData.tls == TLS_OUT_OF_INDEXES);
+      }
+      newData.count++;
+
+      if (m_data.compare_exchange_strong(previous, newData))
+        return newData.tls;
+
+      TlsFree(newData.tls);
+    }
+  }
+
+  void Release()
+  {
+    while (true)
+    {
+      TlsData previous = m_data.load();
+      TlsData newData = previous;
+      if (previous.count == 1)
+        newData.tls = TLS_OUT_OF_INDEXES;
+      newData.count--;
+
+      if (m_data.compare_exchange_strong(previous, newData))
+      {
+        if (previous.count == 1)
+          TlsFree(previous.tls);
+        return;
+      }
+    }
+  }
+};
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+June 14, 2024
+
+
+  0  Collapse this comment
+Copy link
+In both of your methods, if the compare_exchange_strong fails, you fail to update the count. But yes that’s the idea. The details are in the execution.

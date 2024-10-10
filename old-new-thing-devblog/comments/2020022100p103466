@@ -1,0 +1,26 @@
+matake78  February 23, 2020
+
+
+  0  Collapse this comment
+Copy link
+1. "Since each I/O has its own event (if you know what’s good for you), the SetEvent(hEvent) will not experience contention, so it will be fast. "
+From my understanding, looking at the WRK source, using the same single Event object for all I/O operations should not be a problem if it's just used as a dummy (=no waiting). In this case KeSetEvent() only sets the signal state to 1 wrapped in a KiLockDispatcherDatabase()/KiUnlockDispatcherDatabase(). How could...Read more1. “Since each I/O has its own event (if you know what’s good for you), the SetEvent(hEvent) will not experience contention, so it will be fast. “
+From my understanding, looking at the WRK source, using the same single Event object for all I/O operations should not be a problem if it’s just used as a dummy (=no waiting). In this case KeSetEvent() only sets the signal state to 1 wrapped in a KiLockDispatcherDatabase()/KiUnlockDispatcherDatabase(). How could any contention occur at all?
+2. “When the I/O completes, the I/O manager returns to the original issuing thread in order to set the event. This introduces an extra thread switch to the I/O operation, as well as additional contention into I/O completion bookkeeping.²”
+From my understanding, looking at the WRK source, ALL I/O completes with a special kernel APC routine called IopCompleteRequest() that runs in a context of the original issuing thread. This routine copies data to userspace buffer, updates the user mode OVERLAPPED structure, sets either user provided OVERLAPPED event or internal file object event by calling KeSetEvent() and finishes of by queueing completion packet to the I/O completion port.
+So looking at this, it shouldn’t matter at all since I/O completion always introduce an extra thread switch if your not also using SetFileOverlappedRange() to lock the user mode OVERLAPPED structures in memory.
+NOTE: Above is for XP and below where FILE_SKIP_SET_EVENT_ON_HANDLE isn’t supported. If using Vista and above the special kernel APC routine is no longer queued when using completion ports and to optimize just use FILE_SKIP_SET_EVENT_ON_HANDLE.
+Read less
+
+
+
+
+
+
+
+紅樓鍮  February 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+The fact that the referenced article’s comment section is closed with an unanswered question dangling uneases me.  I hope Роман Гаусс understands what “if an explicit event is provided for the request, [the implicit event] is still signaled” implies.

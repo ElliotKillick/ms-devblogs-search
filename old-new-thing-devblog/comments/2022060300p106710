@@ -1,0 +1,164 @@
+Me Gusta  June 5, 2022
+
+
+  0  Collapse this comment
+Copy link
+This makes me wonder if either the person who wrote the code didn’t trust the optimiser or they did that in an ill thought out attempt to avoid an extra read.
+
+
+
+
+
+Ivan K  June 4, 2022
+
+
+  0  Collapse this comment
+Copy link
+Well I guess information disclosure is app verifier version y or whatever wasn’t run before version x of app meh was released.
+
+
+
+
+
+Max Mustermueller  June 4, 2022
+
+
+  0  Collapse this comment
+Copy link
+Am I the only one, after reading this, who wants to see another blog post showing and explaining us a serious real security vulnerability? Most of the time they are not published even after being fixed. Or they are published with so many technical terms that only a security expert is able to understand it. It even hasn’t to be a recent  security vulnerability.
+
+
+
+
+
+Scarlet Manuka  June 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+You are not alone! Every time I read one of the "dubious security vulnerability report" articles I wish we also had a few examples written up in a similar fashion of bug reports that indeed turned out to be security vulnerabilities. But I can also think of several reasons why Microsoft might not wish such things to be published.
+I agree that it wouldn't have to be a recent issue (in fact I'm sure we would...Read moreYou are not alone! Every time I read one of the “dubious security vulnerability report” articles I wish we also had a few examples written up in a similar fashion of bug reports that indeed turned out to be security vulnerabilities. But I can also think of several reasons why Microsoft might not wish such things to be published.
+I agree that it wouldn’t have to be a recent issue (in fact I’m sure we would want to avoid anything recent), but something from the XP days or even Windows 9x would still be interesting.
+Read less
+
+
+
+
+
+
+
+Stuart Ballard  June 3, 2022
+
+
+  0  Collapse this comment
+Copy link
+Based on the C++ I've learned purely from reading your blog, I'm guessing the obvious fix would be to keep the result of GetThemeName() alive by doing something like:
+<code>
+If that's correct, is there a way to do it without introducing that extra verbosity and the otherwise unused variable? My C#-trained brain considers a variable that's declared, used immediately once, and never again, to be a code smell unless it adds clarity/readability, which is the opposite...Read moreBased on the C++ I’ve learned purely from reading your blog, I’m guessing the obvious fix would be to keep the result of GetThemeName() alive by doing something like:
+auto theme_name = GetThemeName();
+auto theme = theme_name.c_str();
+If that’s correct, is there a way to do it without introducing that extra verbosity and the otherwise unused variable? My C#-trained brain considers a variable that’s declared, used immediately once, and never again, to be a code smell unless it adds clarity/readability, which is the opposite of what an extra variable does here! I understand that my instinctive reaction doesn’t apply in an RAII language, but I’m still curious if there’s an alternative in this particular case.
+Read less
+
+
+
+
+
+
+
+Me Gusta  June 6, 2022
+
+
+  0  Collapse this comment
+Copy link
+There is one thing that adding extra variables can do in C++ is give the optimiser some hints.
+Taking the above situation as is, then if you do:
+<code>
+Then the optimiser knows that you intend to use the pointer and stores it in a register. It then actually removes the theme variable entirely since it isn't needed. This is where the irony is. Simpler code with extra variables may actually optimise better than clever code because...Read moreThere is one thing that adding extra variables can do in C++ is give the optimiser some hints.
+Taking the above situation as is, then if you do:
+auto &&theme_name = GetThemeName(); //extends the lifetime of the temporary without moving it
+auto theme = theme_name.c_str();
+Then the optimiser knows that you intend to use the pointer and stores it in a register. It then actually removes the theme variable entirely since it isn’t needed. This is where the irony is. Simpler code with extra variables may actually optimise better than clever code because the optimiser is able to see what you are doing.
+I have seen interesting performance increases where using a temporary performs better than a long string of function calls. One of the bigger cases was where one of the functions wasn’t inlined so the code had to execute it each time it was used, but only once when it was captured to a temporary.
+Optimisation does interesting things to the code. Beyond having to act as if it was the original code, it is possible for the output to look nothing like the input.
+Read less
+
+
+
+
+
+
+
+紅樓鍮  June 3, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+The fix is literally to KISS:<code>
+This should in theory compile to the same assembly as the author's intended code.  I can't think about a reason why the author had to use C-style string operations either.
+Edit: If the author thinks getting the theme name should not introduce a potential allocation and a copy (say, because the set of possible theme names is closed and you can actually list all possible values as string literals,...Read moreThe fix is literally to KISS:
+auto theme = GetThemeName();
+if (theme == "Light")
+  SetLightTheme();
+else if (theme == "Dark")
+  SetDarkTheme();
+else
+  SetDefaultTheme();
+This should in theory compile to the same assembly as the author’s intended code.  I can’t think about a reason why the author had to use C-style string operations either.
+Edit: If the author thinks getting the theme name should not introduce a potential allocation and a copy (say, because the set of possible theme names is closed and you can actually list all possible values as string literals, so that they live statically in the compiled binary’s text section), then that can’t possibly be achieved without changing the return type of GetThemeName() itself (and probably the definition of every data structure that holds any theme name information) to a non-memory-managing type: std::string_view or, better, an enumeration type.
+Since both "Light" and "Dark" are embarrassingly subject to short string optimization, I’d say the benefit of avoiding std::string here is as much as saving the code size of an exception handler.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+June 3, 2022
+
+
+  0  Collapse this comment
+Copy link
+My example was an oversimplification. The return type of GetThemeName was actually a winrt::hstring, but I used std::string to keep things more tightly focused on the issue of temporary lifetime rather than making it look like a C++/WinRT-specific problem.
+
+
+
+
+
+Paulo Pinto  June 3, 2022
+
+
+  0  Collapse this comment
+Copy link
+That is the right answer.
+Unfortunately even after 40 years, C++ still suffers too much from C culture, leading to these results.
+
+
+
+
+Craig Powers  June 3, 2022
+
+
+  0  Collapse this comment
+Copy link
+The way to do it without the otherwise unused variable is to stop trying to work with a pointer.
+The most obvious way is to avoid using strcmp to do the comparison.  Then you would store the result of GetThemeName() entirely and do the comparison on that.  I'd have to check on my references, but I would imagine std::string has an equality operator for char*.  This option would have minimal changes to verbosity.
+Another...Read moreThe way to do it without the otherwise unused variable is to stop trying to work with a pointer.
+The most obvious way is to avoid using strcmp to do the comparison.  Then you would store the result of GetThemeName() entirely and do the comparison on that.  I’d have to check on my references, but I would imagine std::string has an equality operator for char*.  This option would have minimal changes to verbosity.
+Another alternative would be to store the result into a more appropriate type that could provide a char* but would capture the data.  That will necessarily have the issue of needing to manage the lifetime of the copied data.  For example, you might copy the result into a std::vector (which I think would need some sort of a convenience function to help get the length, which would also address the verbosity issue).  The rough C# equivalent would be calling ToList or ToArray on an IEnumerable to capture the contents instead of taking a reference to the enumerable directly, though garbage collection in .NET means you don’t have to worry about a reference disappearing out from under you.
+Read less
+
+
+
+
+
+
+
+Neil Rashbrook  June 4, 2022
+
+
+  0  Collapse this comment
+Copy link
+My favourite C++ string library has a named method to compare against a const CharT (&)[N].

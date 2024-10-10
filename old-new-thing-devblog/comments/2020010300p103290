@@ -1,0 +1,235 @@
+Nikolai Vorontsov  January 17, 2020
+
+
+  0  Collapse this comment
+Copy link
+I'm sorry guys, but who cares these days about Intel Itanium, Alpha AXP, MIPS R4000, PowerPC 600 and SuperH-3 architectures?
+Let them rest in peace and move on.
+AMD64/ARM handles efficiently unaligned reads? OK, 99.9% of time forgot about alignment (and pragma pack as well :-).
+Only in rare cases when you really need a specific alignment (memory pressure, cache utilization, serialization, cache congestion, etc) you need to care. And most of the issues there are not...Read moreI’m sorry guys, but who cares these days about Intel Itanium, Alpha AXP, MIPS R4000, PowerPC 600 and SuperH-3 architectures?
+Let them rest in peace and move on.
+AMD64/ARM handles efficiently unaligned reads? OK, 99.9% of time forgot about alignment (and pragma pack as well :-).
+Only in rare cases when you really need a specific alignment (memory pressure, cache utilization, serialization, cache congestion, etc) you need to care. And most of the issues there are not related to what Raymond Chen presented us.
+Nikolai
+Read less
+
+
+
+
+
+
+
+Ivan Kljajic  January 4, 2020
+
+
+  0  Collapse this comment
+Copy link
+I may be mis-remembering, but didn't VS emit warnings about structs being sensitive to alignment if padding bytes were inserted "in the middle"? I think the goal of the warning was to help efficiently rearrange newly created struct's members and reduce memcpy surprises.
+And did #pragma pack(1) cause that warning to go away? So maybe it was inadvertly used as a magic bullet to get the compiler to shut up by people who never heard...Read moreI may be mis-remembering, but didn’t VS emit warnings about structs being sensitive to alignment if padding bytes were inserted “in the middle”? I think the goal of the warning was to help efficiently rearrange newly created struct’s members and reduce memcpy surprises.
+And did #pragma pack(1) cause that warning to go away? So maybe it was inadvertly used as a magic bullet to get the compiler to shut up by people who never heard of “Bus Error (core dumped)”, and if asked would probably say “yes, I try to avoid and reduce risk whenever possible”.
+Read less
+
+
+
+
+
+
+
+Ajay Saxena  January 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+Asking for a friend, why is this approach better than not using padding and letting more of the objects be in cache, leading to better cache utilization and faster processing.
+
+
+
+
+
+Erik Fjeldstrom  January 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+If your data structures don’t cross any alignment boundaries you (probably/hopefully) won’t notice, but the downside to not having to worry about alignment overly much is that the processor has to take care of misaligned data, which is not free. As well, most SSE and certain other vector instructions *do* care about alignment, so a compiler may be forced to reduce its optimizations if it encounters misaligned data.
+
+
+
+
+
+Alex Martin  January 7, 2020
+
+
+  0  Collapse this comment
+Copy link
+> the processor has to take care of misaligned data
+As covered in the article, on most RISC architectures the processor does not do this for you. The compiler has to explicitly generate different code, which can be expensive.
+
+
+
+
+Raymond Chen Author
+January 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+Good advice comes with a rationale so you can tell when it becomes bad advice. You need to balance the code overhead of unpacking against the cache benefit of packing. But I’ve seen code that packs every single structure, even the ones that are nowhere near critical path, resulting in doubling of the code size for no benefit.
+
+
+
+
+
+smf  January 6, 2020
+
+
+  0  Collapse this comment
+Copy link
+I'm sure you have seen code that does that, but that doesn't make "Anybody who writes #pragma pack(1)" true.
+I used it only for stored structures that were shared across Z80 CP/M, 80286 (DOS), 80386 (DOS/Unix/Windows), ARM (Windows CE), SH4 (Windows CE).
+Admittedly when doing the ARM port it came back to bite me as there was one part of the code that took a pointer to one of the members and because it was a long...Read moreI’m sure you have seen code that does that, but that doesn’t make “Anybody who writes #pragma pack(1)” true.
+I used it only for stored structures that were shared across Z80 CP/M, 80286 (DOS), 80386 (DOS/Unix/Windows), ARM (Windows CE), SH4 (Windows CE).
+Admittedly when doing the ARM port it came back to bite me as there was one part of the code that took a pointer to one of the members and because it was a long that had ended up on an odd boundary the cpu threw an exception. However it was still easier to stop taking a pointer than it was to change from doing a #pragma pack(1) or building a time machine.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+January 6, 2020
+
+
+  0  Collapse this comment
+Copy link
+“Anybody who writes #pragma pack(1) for reasons other than data serialization…”
+
+
+
+Joshua Hudson  January 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+#pragma pack(1) is for representing on-disk or on-wire structures correctly. Why ever use it elsewhere?
+
+
+
+
+
+Dave Gzorple  January 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+It’s also used for APIs where you need compatibility across different compilers.  For example PKCS #11 uses #pragma pack(1) to get around problems with different compiler structure padding.
+
+
+
+
+
+cricwood@nerdshack.com  January 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+*cough* games *cough* performance *cough*
+When bandwidth is your bottleneck, trading ALU for more payload per cache line can be a good deal. This is especially true on x86, where pack(1) gives you more payload per cache line for … pretty much no additional ALU load.
+
+
+
+
+
+Dave Bacher  January 7, 2020
+
+
+  0  Collapse this comment
+Copy link
+#pragma pack(1) is going to stall on x86 and x64. A lot.
+An unaligned read is five microcode operations, versus one for an aligned read.  An unaligned write is twelve microcode operations, versus one for an aligned write.  On older AMD hardware, you're going to stall three of the four execution units a good percentage of the time.
+A better strategy - if you have the ability - is array per field.  That will...Read more#pragma pack(1) is going to stall on x86 and x64. A lot.
+An unaligned read is five microcode operations, versus one for an aligned read.  An unaligned write is twelve microcode operations, versus one for an aligned write.  On older AMD hardware, you’re going to stall three of the four execution units a good percentage of the time.
+A better strategy – if you have the ability – is array per field.  That will get you the same bandwidth benefits, but the compiler will optimize to SSE or MMX more frequently, will unroll more loops.  You’ll generally get the same benefits as #pragma pack 1 to bandwidth, since arrays of primitive types pack.
+Read less
+
+
+
+
+
+
+
+cricwood@nerdshack.com  January 8, 2020
+
+
+  0  Collapse this comment
+Copy link
+This is in direct contradiction to any Intel guideline I’ve ever read. Since Sandy Bridge (2011), misaligned on-SSE data is handled exactly like aligned data, apart from a possible penalty crossing cache lines (https://www.agner.org/optimize/blog/read.php?i=142&v=t). I can’t imagine AMD being a lot different.
+I fully agree with your SOA comment, though.
+
+
+
+
+Raymond Chen Author
+January 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+You’d be surprised how often it’s applied to things that are never used for serialization.
+
+
+
+
+Jeremy Richards  January 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+Out of curiosity, could you combine #pragma pack(1) with __declspec(align(4)) to get the structure packing effect, without impacting the alignment of the structure when embedded in other structures?
+
+
+
+
+
+Raymond Chen Author
+January 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+My quick experiments suggest that yes you can add __declspec(align(4)) or alignas(4) to restore 4-byte alignment.
+
+
+
+
+
+Alex Martin  January 6, 2020
+
+
+  0  Collapse this comment
+Copy link
+But note that this is not guaranteed to be sufficient; I believe some 64-bit architectures require 8-byte alignment?
+
+
+
+
+
+Joshua Hudson  January 7, 2020
+
+
+  0  Collapse this comment
+Copy link
+__declspec(align(sizeof(void*))) should work but I have not tried it.
+
+
+
+
+
+Charles Milette  January 11, 2020
+
+
+  0  Collapse this comment
+Copy link
+Prefer using “struct alignas(void*) Foo”

@@ -1,0 +1,57 @@
+David Streeter  February 11, 2020
+
+
+  0  Collapse this comment
+Copy link
+How does deleting files work? e.g. a file is added in M2 but later removed in M4.
+Is there a list of files to delete, or do obsolete files just get left lying around, unloved?
+
+
+
+
+
+cheong00  February 11, 2020
+
+
+  0  Collapse this comment
+Copy link
+Since Delta updates are incremental update, for any files that should be delete in N+1 update level, it would be deleted promptly.
+If it were to be uninstalled, there is a reason why Windows create restore point on update.
+https://docs.microsoft.com/en-us/windows/win32/sr/restore-points
+
+
+
+
+Piotr Siódmak  February 11, 2020
+
+
+  0  Collapse this comment
+Copy link
+I thought that to apply a patch you had to uninstall the currently installed one, effectively rolling back to the baseline (latest CU). Seemed logical because then patches are always applied against the common baseline (but every next patch would be bigger). Also I thought that was why C:\Windows\Installer keeps growing (keeps patch uninstallers).
+
+
+
+
+
+Me Gusta  February 11, 2020
+
+
+  0  Collapse this comment
+Copy link
+The files in the Windows directories are actually hard linked to files in %SystemRoot%\WinSxS. For example, on my system:
+C:\>fsutil hardlink list c:\windows\system32\kernel32.dll
+\Windows\System32\kernel32.dll
+\Windows\WinSxS\amd64_microsoft-windows-kernel32_31bf3856ad364e35_10.0.18362.329_none_e9af874ee7d1812d\kernel32.dll
+The way Windows Update applies an update is to install the files into the WinSxS directory then removes the old hard link and then creates a new hard link to the most up to date file. So all of the files live happily side by side in the WinSxS directory...Read moreThe files in the Windows directories are actually hard linked to files in %SystemRoot%\WinSxS. For example, on my system:
+C:\>fsutil hardlink list c:\windows\system32\kernel32.dll
+\Windows\System32\kernel32.dll
+\Windows\WinSxS\amd64_microsoft-windows-kernel32_31bf3856ad364e35_10.0.18362.329_none_e9af874ee7d1812d\kernel32.dll
+The way Windows Update applies an update is to install the files into the WinSxS directory then removes the old hard link and then creates a new hard link to the most up to date file. So all of the files live happily side by side in the WinSxS directory and so multiple updates with that file can be installed at the same time.
+The reason why the directory kept growing in Windows Vista and 7 is because there was no automatic checking the WinSxS directory for completely superseded patches. It was either Windows 8 or 8.1 where this was added and actually happens automatically. If you run C:\Windows\system32>dism /online /cleanup-image /analyzecomponentstore you will get output that includes the following:
+Date of Last Cleanup : 2020-01-29 17:52:54
+Number of Reclaimable Packages : 2
+Component Store Cleanup Recommended : Yes
+If you then run dism /online /cleanup-image /startcomponentcleanup then this will manually remove patches that are not in use by Windows.
+As a note, a patch can be partially in use, that is some files are hard linked into the Windows directory but other files have newer versions available and these have been obtained from other patches. In this case Windows will not be able to remove the patch since Windows will only remove the entire patch.
+Finally, the /startcomponentcleanup option has the /resetbase option. What this does is to make the current patch level the baseline for Windows and removes the files that have been superseded by the current patch from the baseline image.
+Read less

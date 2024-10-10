@@ -1,0 +1,214 @@
+John McPherson  February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+The Windows 11 API <code> is the new way to check.  It is the only way to detect AMD64 support on ARM64 devices, but can also be used to detect all of the cases that <code> supports.  And if it is important to you, you can even learn whether the given architecture is supported in user/kernel/via WoW64 mechanism.
+Read moreThe Windows 11 API
+GetMachineTypeAttributes
+ is the new way to check.  It is the only way to detect AMD64 support on ARM64 devices, but can also be used to detect all of the cases that
+Is­Wow64­Guest­Machine­Supported
+ supports.  And if it is important to you, you can even learn whether the given architecture is supported in user/kernel/via WoW64 mechanism.
+Read less
+
+
+
+
+
+
+
+Andrew Molyneux  February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+What are CEE and CEF? I’ve tried Googling but I don’t see anything that looks plausible.
+
+
+
+
+
+Scott Seligman  February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+I’m pretty sure they’re .NET image formats.  There’s some reference to CEE being the “CLR pure MSIL” format early on.
+
+
+
+
+
+c h  February 10, 2022
+
+
+  0  Collapse this comment
+Copy link
+Without context… there was CEF as in Common Executable Format.  This was just before DotNet came around, so early 2000s.  A WinCE sort of thing, where you had mips, shx, arm, x86? and who wants a binary for each?  CEF was scraped for DotNet.  Google should have something.
+
+
+
+Yannick Fortin  February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+Speculation…
+i386 = 0x014C = 332, as in “386, 32 bits”
+From then on, 0x016x is MIPS, 0x018x is Alpha, 0x01Ax is SH3, 0x01Cx is ARM…
+Then 64 bits is introduced with 0x0200, where 0x02xx means 64-bits. So 0x026x is MIPS-64, 0x028x is Alpha-64, etc.
+Then they got creative. 😉
+
+
+
+
+
+skSdnW  February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+This is sadly incorrect, Microsoft did a little too much compatibility fixing.
+Get­Native­System­Info lies on ARM64.
+Is­Wow64­Guest­Machine­Supported only returns 32-bit guests, not AMD64 on ARM64.
+IsWow64Process2 tells the truth.
+
+
+
+
+
+Jan Ringoš  February 12, 2022
+
+
+  0  Collapse this comment
+Copy link
+It will even lie, if you are x86-64 program running on AArch64 and will attempt to track architecture (.Machine) word through HMODULE -> IMAGE_DOS_HEADER -> IMAGE_NT_HEADERS -> .Machine. It will lie that it’s IMAGE_FILE_MACHINE_AMD64 even if it actually is ARM64 kernel32.dll or any other system DLL. Likely an artifact of how the ARM64X/ARM64EC works, but still.
+
+
+
+
+
+skSdnW  February 12, 2022
+
+
+  0  Collapse this comment
+Copy link
+There is no lie there. The machine member is the PE file declaring which CPU it was compiled for. This member will always match the .exe. A WoW64 process for example will have a 32-bit ntdll.dll loaded but it will also have a hidden 64-bit native ntdll.dll in the process. ARM64 blurs the lines a little bit with CHPE but the application should not notice.
+
+
+
+
+
+Jan Ringoš  February 13, 2022
+
+
+  0  Collapse this comment
+Copy link
+X64 emulation on ARM64 doesn’t come with it’s own set of DLLs. Also it’s not WoW64, therefore no fs/registry redirections etc.
+Instead there are extra sections in the native AArch64 DLLs that assist the emulator when jumping to/from native code. The loader probably patches the header in memory, if I query the module path, open it as a file, then I get the proper 0xAA64.
+
+
+
+
+
+skSdnW  February 13, 2022
+
+
+  0  Collapse this comment
+Copy link
+No of course it’s not WoW64 but that is the only example I know of where the machine member does not match the .exe. And yes, on ARM 64 the PE header and import table are patched when loaded into a AMD64 process.
+
+
+
+
+Henry Skoglund  February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+Compatibility has always been #1 priority for Microsoft, for example the location of system dlls:
+16-bit Windows –> C:\Windows\System
+32-bit Windows –> C:\Windows\System32
+64-bit Windows –> C:\Windows\System32
+32-bit dlls on 64-bit Windows -> C:\Windows\SysWOW64
+I think any other company would have used C:\Windows\System64 for 64-bit Windows dlls…
+
+
+
+
+
+Adam Rosenfield  February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+If Microsoft had done that, they would have gotten lots of complains from users:
+“Why doesn’t my app work on the new 64-bit Windows?”
+“Sorry, the app has a bug and incorrectly hard-codes the wrong file path that happened to work on 32-bit Windows but doesn’t work any more on 64-bit WIndows.  You should ask the developer to fix that.”
+“They went out of business 5 years ago.”
+Microsoft did they right thing for compatibility.
+
+
+
+
+
+anonymous  February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+this comment has been deleted.
+
+
+
+
+
+Ian Yates  February 10, 2022
+
+
+  0  Collapse this comment
+Copy link
+It helps explain to users (if they even notice) that the xxx placeholders in your example paths are not the same and thus the example isn't useful. Better to use xxx32 and yyy64 as the start of the discussion.
+Explorer is a 64-bit app and you're looking at the 64 bit view of the world, yada yada. System files are just in this thing called System32 for back compat reasons. The 32-bit ones need to...Read moreIt helps explain to users (if they even notice) that the xxx placeholders in your example paths are not the same and thus the example isn’t useful. Better to use xxx32 and yyy64 as the start of the discussion.
+Explorer is a 64-bit app and you’re looking at the 64 bit view of the world, yada yada. System files are just in this thing called System32 for back compat reasons. The 32-bit ones need to be somewhere so they’re in the “windows (32) on Windows 64” system files folder, etc.
+Moving from win16 to win32 was plainly necessary and made dev lives easier.
+Moving from 32 to 64 for regular apps isn’t as necessary so better side-by-side and shim stuff was required.
+Read less
+
+
+
+
+
+
+
+Harry Johnston  February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+I’ve never quite understood what scenario would break here.  I mean, it would have to be a 32-bit app, right?  So c:\windows\system32 would still be the right path for it to find a DLL, even if the 64-bit apps were using c:\windows\system64.
+Perhaps it was more about making it easier to port apps from 32-bit to 64-bit?
+
+
+
+
+
+Henry Skoglund  February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+Note that notepad.exe (the native one) is always also stored in C:\Windows I think for this purpose.
+Anyways, I think it’s tricky to explain for the layman why 64-bit stuff is stored in a xxx32 directory and 32-bit stuff is stored in a xxx64 directory.
+
+
+
+
+
+Raymond Chen Author
+February 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+There are places that store command lines without any associated bitness. E.g. batch files, command lines in the registry. A batch file that runs C:\Windows\System32\notepad.exe, expects to get the native notepad.exe (not an emulated one that may suffer registry or file system redirection).

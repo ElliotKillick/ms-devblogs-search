@@ -1,0 +1,149 @@
+schbaem  October 18, 2022
+
+
+  1  Collapse this comment
+Copy link
+Using auto in blog posts to declare variables is a horrible thing, because without intellisense there is just no help to identify what is going on.
+
+
+
+
+
+Jeff Howe  October 19, 2022
+
+
+  0  Collapse this comment
+Copy link
+I used Intuitionsense(TM) to look up TokenIntegrityLevel, found that it’s a member of the TOKEN_INFORMATION_CLASS enumeration, used in something called GetTokenInformation() to retrieve a TOKEN_MANDATORY_LABEL structure. Intellisense isn’t going to tell you anything more than ‘info’ is a pointer to a TOKEN_MANDATORY_LABEL, like what it is and what you can do with it, whereas IntuitionSense can do that.
+
+
+
+
+
+Sigge Mannen  October 19, 2022
+
+
+  0  Collapse this comment
+Copy link
+Well, auto does lose in Google hits. Unless of course, they have also implemented Intuitionsense(TM)(R)(C)
+
+
+
+skSdnW  October 17, 2022
+
+
+  0  Collapse this comment
+Copy link
+Which begs the question, why does the TokenElevation information class exist and why does it produce the wrong result (at least it did up to including 8.1, not tested this in a while).
+This can lead to a confusing situation:
+1 Elevate cmd.exe.
+2 Craft a program that takes this elevated token and reduces the IL to Low IL and start another cmd.exe with this new token.
+3 The new Low IL cmd.exe in a new console...Read moreWhich begs the question, why does the TokenElevation information class exist and why does it produce the wrong result (at least it did up to including 8.1, not tested this in a while).
+This can lead to a confusing situation:
+1 Elevate cmd.exe.
+2 Craft a program that takes this elevated token and reduces the IL to Low IL and start another cmd.exe with this new token.
+3 The new Low IL cmd.exe in a new console still says “Administrator” in the console title! The token for this process still reports TokenElevation=Elevated. The IL is correct and reports 0x1000.
+Read less
+
+
+
+
+
+
+
+Harry Johnston  October 18, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+I believe the elevation type is set during logon, i.e., TokenElevationTypeDefault if no split token is created, or TokenElevationTypeFull and TokenElevationTypeLimited for the elevated and non-elevated split tokens, respectively.
+Presumably if you are modifying a token by lowering the integrity level it is your responsibility to disable the administrators group and change the elevation type accordingly.  Correction: it doesn't seem to be possible to change the elevation type of an existing token.
+(I would note that...Read moreI believe the elevation type is set during logon, i.e., TokenElevationTypeDefault if no split token is created, or TokenElevationTypeFull and TokenElevationTypeLimited for the elevated and non-elevated split tokens, respectively.
+Presumably if you are modifying a token by lowering the integrity level it is your responsibility to disable the administrators group and change the elevation type accordingly.  Correction: it doesn’t seem to be possible to change the elevation type of an existing token.
+(I would note that when Explorer needs to reduce its own permissions, it does so by using a scheduled task rather than by messing with the token; this is probably a good example to follow!)
+Read less
+
+
+
+
+
+
+
+skSdnW  October 18, 2022
+
+
+  0  Collapse this comment
+Copy link
+I’m talking about TOKEN_ELEVATION, not TOKEN_ELEVATION_TYPE.
+Regardless, the net result is that the console is marked as administrator even though the token can’t pass any actual security checks because those actually check the IL instead of whatever TOKEN_ELEVATION is supposed to be used for.
+
+
+
+
+
+Harry Johnston  October 18, 2022
+
+
+  0  Collapse this comment
+Copy link
+Yes, but this is because you are modifying the token in a way you shouldn't.
+I've done a bit of digging but there doesn't seem to be any way to change an elevated token into a non-elevated token.  Even the LUA_TOKEN option to CreateRestrictedToken doesn't work.  I did find this a little surprising.  In practice, though, it doesn't matter, because the correct solution is to use the limited token that was generated for...Read moreYes, but this is because you are modifying the token in a way you shouldn’t.
+I’ve done a bit of digging but there doesn’t seem to be any way to change an elevated token into a non-elevated token.  Even the LUA_TOKEN option to CreateRestrictedToken doesn’t work.  I did find this a little surprising.  In practice, though, it doesn’t matter, because the correct solution is to use the limited token that was generated for you at logon.
+Read less
+
+
+
+
+
+
+
+Harry Johnston  October 19, 2022
+
+
+  0  Collapse this comment
+Copy link
+I've just checked, and if you run Edge elevated it first de-elevates using the limited token generated at logon, and only then starts implementing the further restrictions you're talking about.  (You can confirm this with Process Explorer by checking the logon session; at logon, the elevated and non-elevated tokens get assigned to different logon sessions.  All the Edge processes I can find are in the non-elevated logon session, even though I launched Edge...Read moreI’ve just checked, and if you run Edge elevated it first de-elevates using the limited token generated at logon, and only then starts implementing the further restrictions you’re talking about.  (You can confirm this with Process Explorer by checking the logon session; at logon, the elevated and non-elevated tokens get assigned to different logon sessions.  All the Edge processes I can find are in the non-elevated logon session, even though I launched Edge “as administrator”.)
+(On the other hand, it might not really matter in this scenario.  I mean, Chromium is using these tokens to run special-purpose code that expects to be running in an artificially restricted security context, right?  It isn’t just launching cmd.exe and expecting it to cope!)
+Read less
+
+
+
+
+
+
+
+MGetz  October 19, 2022
+
+
+  0  Collapse this comment
+Copy link
+Observation: That may not be safe to do so, If you're deliberately lowering a token you probably want to be extremely explicit with it because you have extremely good security reasons for not running elevated. For example Chromium (and thus Edge) start browser processes with the untrusted SID and token level and then carefully build up a token that gives them just enough to run. You can actually see each process' current sandbox state using...Read moreObservation: That may not be safe to do so, If you’re deliberately lowering a token you probably want to be extremely explicit with it because you have extremely good security reasons for not running elevated. For example Chromium (and thus Edge) start browser processes with the untrusted SID and token level and then carefully build up a token that gives them just enough to run. You can actually see each process’ current sandbox state using chrome://sandbox
+Read less
+
+
+
+
+
+MGetz  October 17, 2022
+
+
+  0  Collapse this comment
+Copy link
+There have been times in my code I've been sorely tempted to add checks like this to make sure someone isn't running my app elevated. I've never actually gone forwards with it because there is always that one user that turns off UAC completely and then complains about everything. That said I do my best to ensure everything works perfectly at medium integrity. I'd do low but that would be too much of a pain...Read moreThere have been times in my code I’ve been sorely tempted to add checks like this to make sure someone isn’t running my app elevated. I’ve never actually gone forwards with it because there is always that one user that turns off UAC completely and then complains about everything. That said I do my best to ensure everything works perfectly at medium integrity. I’d do low but that would be too much of a pain to make work without doing a lot of token tuning to grant back the bits of medium I need. I’ve always lamented there was no opt in mechanism via the win32 manifest for this sort of thing. So app developers could explicitly mark their utility or tool for what they needed. Do I realize it would rarely get used? Yes I do, but that doesn’t mean I wouldn’t like the option without having to convert my app to a store app.
+Read less
+
+
+
+
+
+
+
+Harry Johnston  October 17, 2022
+· Edited
+
+  2  Collapse this comment
+Copy link
+If I remember correctly, it is possible to distinguish between your process being elevated and UAC being turned off.  I think TokenElevationType is the appropriate query: TokenElevationTypeDefault means UAC is off or the user isn't an administrator, TokenElevationTypeFull means the process is elevated, and TokenElevationTypeLimited means the process is not elevated.  I haven't tested this recently, so caveat emptor.
+(On general principles though, and without knowing what sort of applications you're talking about, if...Read moreIf I remember correctly, it is possible to distinguish between your process being elevated and UAC being turned off.  I think TokenElevationType is the appropriate query: TokenElevationTypeDefault means UAC is off or the user isn’t an administrator, TokenElevationTypeFull means the process is elevated, and TokenElevationTypeLimited means the process is not elevated.  I haven’t tested this recently, so caveat emptor.
+(On general principles though, and without knowing what sort of applications you’re talking about, if I make the choice to run an application elevated then I’d rather the programmer not override that decision.)
+Read less

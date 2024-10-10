@@ -1,0 +1,82 @@
+Lucian Jalba  June 19, 2019
+
+
+  0  Collapse this comment
+Copy link
+Nitpicker’s corner: it is recommended to use the form “std::enable_if_t< std::is_convertible_v<T, int>, int> = 0” rather than “typename = std::enable_if_t< std::is_convertible_v<T, int>>”
+
+
+
+
+
+Moritz Beutel  June 20, 2019
+
+
+  0  Collapse this comment
+Copy link
+Can you give a reason for the recommendation, or a link which explains it?
+
+
+
+
+
+Lucian Jalba  June 20, 2019
+
+
+  0  Collapse this comment
+Copy link
+It is right here: https://en.cppreference.com/w/cpp/types/enable_if, under the Notes. Please keep in mind that although it might not be relevant for this exact case, good practice is good practice…
+
+
+
+
+
+Moritz Beutel  June 21, 2019
+
+
+  0  Collapse this comment
+Copy link
+Thank you, I wasn’t aware of this problem.
+
+
+
+
+
+Kevin Puetz  June 20, 2019
+
+
+  0  Collapse this comment
+Copy link
+> A common mistake is to declare two function templates that differ only in their default template arguments. This does not work because the declarations are treated as redeclarations of the same function template (default template arguments are not accounted for in function template equivalence).
+From https://en.cppreference.com/w/cpp/types/enable_if
+---
+Basically, the form `typename = std::enable_if_t< std::is_convertible_v<T, int>>` can only be used to produce one such specialization, because a second (even if it had a different enable_if...Read more> A common mistake is to declare two function templates that differ only in their default template arguments. This does not work because the declarations are treated as redeclarations of the same function template (default template arguments are not accounted for in function template equivalence).
+From https://en.cppreference.com/w/cpp/types/enable_if
+—
+Basically, the form `typename = std::enable_if_t< std::is_convertible_v<T, int>>` can only be used to produce one such specialization, because a second (even if it had a different enable_if condition) would be the same `template<typename C, typename>` with a different default value, which isn’t distinct.
+The latter `std::enable_if_t< std::is_convertible_v<T, int>, int> = 0` is a different template parameter (assuming only one of the variations meets its enable_if, it’ll be the only one taking an int and the others are deleted).
+Also, the former could be instantiated with a type that failed to meet the enable_if, as long as you explicitly specified both template parameter (thus the default never needs to get subsituted at all and no failure occurs that would be subject to SFINAE).
+Read less
+
+
+
+
+
+
+Adam Merz  June 20, 2019
+
+
+  0  Collapse this comment
+Copy link
+Here’s another: `begin` is actually being called on a `C const&`, but the SFINAE check is using a `C&&`; it should instead be `begin(std::declval<C const&>())` in case of overload trickery.
+
+
+
+
+
+Moritz Beutel  June 20, 2019
+
+
+  0  Collapse this comment
+Copy link
+Also, SFINAE with `begin()` will only work for containers in `namespace std`. A full SFINAE trait for all kinds of containers and ranges is way more involved, cf. https://stackoverflow.com/a/32548994 .

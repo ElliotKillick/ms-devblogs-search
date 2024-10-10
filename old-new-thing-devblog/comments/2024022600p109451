@@ -1,0 +1,382 @@
+紅樓鍮  February 27, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+A semi-straightforward translation to C++ (z/8hY9841j9), using Range-v3 in place of LINQ and  for the C# array, can generate reasonably efficient code that doesn't use heap memory; GCC and clang can even break up the  and enregister all four booleans, so it doesn't even use stack memory. (Semi-straightforward because godbolt's version of Range-v3 doesn't have .)
+Unfortunately, neither GCC nor clang seems to be able to use the  hint to optimize away calls...Read moreA semi-straightforward translation to C++ (z/8hY9841j9), using Range-v3 in place of LINQ and std::array for the C# array, can generate reasonably efficient code that doesn’t use heap memory; GCC and clang can even break up the std::array and enregister all four booleans, so it doesn’t even use stack memory. (Semi-straightforward because godbolt’s version of Range-v3 doesn’t have ranges::contains.)
+Unfortunately, neither GCC nor clang seems to be able to use the [[gnu::pure]] hint to optimize away calls when 2 trues have already been found (maybe that’s too tall an order, considering the amount of C++ machinery in Range-v3 that the compilers need to unravel first).
+Read less
+
+
+
+
+
+
+
+Shawn Van Ness  February 27, 2024
+
+
+  0  Collapse this comment
+Copy link
+bool DoesExactlyOneConditionApply(DataSet data)
+{
+    int n = 0;
+    n += (data.Widgets.Count == 1) ? 1 : 0;
+    n += (data.Gadgets.Count == 1) ? 1 : 0;
+    n += (data.Doodads.Count > data.Sockets.Count) ? 1 : 0;
+    n += (data.Approvers.Contains(Approver.Director)) ? 1 : 0;
+    return (n == 1);
+}
+
+
+
+
+
+Ivan K  February 28, 2024
+
+
+  0  Collapse this comment
+Copy link
+Yeah. Can’t you just do that on one line, and possibly omit the ternary if true/false decay to 1/0?
+ And if you want to short circuit could also maybe use crazy parentheses to group statements with a logical operator that stopped evaluation if both sides are “1”.
+
+
+
+
+Darkwolf0815  February 27, 2024
+
+
+  1  Collapse this comment
+Copy link
+I like Extension Methods for such things.
+I also like generics. So when we put that together, we can write a generic extension method that can use any number of conditions:
+<code>
+It would be used like this:
+<code>
+As performance is not a requirement here but readability I think this should work quite well.
+Read moreI like Extension Methods for such things.
+I also like generics. So when we put that together, we can write a generic extension method that can use any number of conditions:
+        public static bool DoesExactlyOneConditionApply<T>(this T dataSet, params Func<T, bool>[] conditions)
+        {
+            int count = 0;
+            foreach (var condition in conditions)
+            {
+                if (condition(dataSet)) { count++; }
+                if (count >= 2) { return false; }
+            }
+            return count == 1;
+        }
+It would be used like this:
+            bool res = ds.DoesExactlyOneConditionApply(
+                d => d.Widgets.Count == 1,
+                d => d.Gadgets.Count == 1,
+                d => d.Doodads.Count > d.Sockets.Count,
+                d => d.Approvers.Contains(Approver.Director)
+                );
+As performance is not a requirement here but readability I think this should work quite well.
+Read less
+
+
+
+
+
+
+
+Andrew Ducker  February 28, 2024
+
+
+  0  Collapse this comment
+Copy link
+I like this one because it only checks as many conditions as it has to.
+And it would be trivial to extend it to allow the number of wanted conditions to be a parameter.
+
+
+
+
+
+alan robinson  February 27, 2024
+
+
+  0  Collapse this comment
+Copy link
+Awesome, reminds me of the “good”  “old” days of lisp/smalltalk.
+I would name it slightly differently, such as OnlyOneOfTheseIsTrue
+But it’s hard to beat a solution that’s a “one” liner, and where the function called doubles as a fairly complete comment about what’s being done/tested.
+
+
+
+
+
+Bwmat  February 27, 2024
+
+
+  0  Collapse this comment
+Copy link
+I would just use a boolean instead of an integer, IMO it’s easier to understand.
+
+
+
+
+José Carvalho  February 27, 2024
+
+
+  0  Collapse this comment
+Copy link
+Not a one-liner. I’m just having fun.
+bool DoesExactlyOneConditionApply(params bool[] conditions)
+{
+IEnumerable<bool?> helper()
+{
+bool found = false;
+for(int idx = 0; idx < conditions.Length; ++idx)
+{
+if(found && conditions[idx]) yield return false;
+found = found || conditions[idx];
+yield return null;
+}
+yield return found;
+};
+foreach(bool? result in helper()){
+if(result != null) return (bool)result;
+}
+return false;
+}
+
+
+
+
+
+Neil Rashbrook  February 27, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+Were I using a type-unsafe language, I would probably just write
+function doesExactlyOneConditionApply(data)
+{
+    return (data.widgets.length == 1) + (data.gadgets.length == 1) + (data.doodads.length > data.sockets.length) + data.approvers.includes(Approver.director) == 1;
+}
+Whether that would pass review is another matter.
+(What is Approver anyway?)
+
+
+
+
+
+alan robinson  February 27, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+This definitely gets my "count". plus easy enough to make it work where truth does not equal 1:
+<code>
+I have no problem with the performance hit of ray's solution, as it's almost certainly unmeasurable except if inside a loop. But I find this form clearer, personally.  And I love collections where appropriate from my days of smalltalk and lisp coding.
+Read moreThis definitely gets my “count”. plus easy enough to make it work where truth does not equal 1:
+
+
+return 
+((data.widgets.length == 1) + 
+(data.gadgets.length == 1) + 
+(data.doodads.length > data.sockets.length ? 1 : 0 ) + 
+data.approvers.includes(Approver.director)) == 1;
+
+I have no problem with the performance hit of ray’s solution, as it’s almost certainly unmeasurable except if inside a loop. But I find this form clearer, personally.  And I love collections where appropriate from my days of smalltalk and lisp coding.
+Read less
+
+
+
+
+
+
+Paulo Morgado  February 27, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+At the cost of an array allocation and a delegate allocation and 4 invocations? No, thanks!
+bool DoesExactlyOneConditionApply(DataSet data)
+{
+    var exactlyOneConditionApply = (data.Widgets.Count == 1);
+
+    if (data.Gadgets.Count == 1)
+    {
+        if (exactlyOneConditionApply)
+        {
+            return false;
+        }
+
+        exactlyOneConditionApply = true;
+    }
+
+    if (data.Doodads.Count > data.Sockets.Count)
+    {
+        if (exactlyOneConditionApply)
+        {
+            return false;
+        }
+
+        exactlyOneConditionApply = true;
+    }
+
+    if (data.Approvers.Contains(Approver.Director))
+    {
+        if (exactlyOneConditionApply)
+        {
+            return false;
+        }
+
+        exactlyOneConditionApply = true;
+    }
+
+    return exactlyOneConditionApply;
+}
+
+
+
+
+
+anonymous  February 27, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+this comment has been deleted.
+
+
+
+
+
+Csaba Varga  February 27, 2024
+
+
+  1  Collapse this comment
+Copy link
+If you are in a tight loop, your code may be better overall. But if performance is not critical, readability trumps the runtime cost and your solution becomes horrible. Understanding your version takes more effort, and extending it is more error-prone.
+Raymond has pointed out that performance wasn’t an issue in this case, so your “optimization” is actually a pessimization here.
+
+
+
+
+dimohy slogs.dev  February 27, 2024
+· Edited
+
+  3  Collapse this comment
+Copy link
+Stack memory usage
+((Span<bool>)[
+    data.Widgets.Count == 1,
+    data.Gadgets.Count == 1,
+    data.Doodads.Count > data.Sockets.Count,
+    data.Approvers.Contains(Approver.Director),
+]).Count(true) == 1;
+
+
+
+
+
+Henry Skoglund  February 26, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+You can also do a LINQ-less version:
+
+bool DoesExactlyOneConditionApply(DataSet data)
+{
+return Array.FindAll(new [] {
+        data.Widgets.Count == 1,
+        data.Gadgets.Count == 1,
+        data.Doodads.Count > data.Sockets.Count,
+        data.Approvers.Contains(Approver.Director),
+        },x => x).Length == 1;
+}
+
+
+
+
+
+
+Ryan Heath  February 26, 2024
+
+
+  0  Collapse this comment
+Copy link
+How about
+.Where(v => v).Take(2).Count() == 1
+to return early as soon we know there are more than 1 values true?
+// Ryan
+
+
+
+
+
+Stuart Ballard  February 26, 2024
+
+
+  3  Collapse this comment
+Copy link
+Doesn't help without other changes, because we're making an array so all the values have to be computed regardless. Here's what I came up with:
+<code>
+Read moreDoesn’t help without other changes, because we’re making an array so all the values have to be computed regardless. Here’s what I came up with:
+public static bool CountEquals<T>(this IEnumerable<T> items, int count)
+  => items.Take(count + 1).Count() == count;
+
+public static bool ExactlyOneOf<T>(this T item, params Predicate<T> conditions)
+  => conditions.Where(c => c(item)).CountEquals(1);
+
+bool DoesExactlyOneConditionApply(DataSet data)
+  => data.ExactlyOneOf(
+       d => d.Widgets.Count == 1,
+       d => d.Gadgets.Count == 1,
+       d => d.Doodads.Count > d.Sockets.Count,
+       d => d.Approvers.Contains(Approver.Director));
+Read less
+
+
+
+
+
+
+
+Ryan Heath  March 5, 2024
+
+
+  0  Collapse this comment
+Copy link
+Yeah, the idea is the same.
+I assumed they were not bools but still expressions/lambdas.
+// Ryan
+
+
+
+Matthew van Eerde (^_^)  February 26, 2024
+
+
+  1  Collapse this comment
+Copy link
+If the checks are expensive, or if the function is a performance bottleneck, I suppose one way to make it more efficient would be to bail out as soon as you see a second true condition
+
+
+
+
+
+Ian Boyd  February 28, 2024
+
+
+  0  Collapse this comment
+Copy link
+On the down-side, by removing function calls you risk breaking something.
+It shouldn’t be true, but some people have written classes that actually mutate when you invoke a getter. Or perhaps `Data.Sockets` is lazy fetched on demand, and suddenly it’s not there as expected.
+Can’t just go in all young programmer and say, “Pfft, look at how inefficient this is. I’ll just fix that up real quick.”
+
+
+
+
+
+anonymous  February 27, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+this comment has been deleted.

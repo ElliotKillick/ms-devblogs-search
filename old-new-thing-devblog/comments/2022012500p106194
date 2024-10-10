@@ -1,0 +1,145 @@
+Nick  January 26, 2022
+
+
+  0  Collapse this comment
+Copy link
+It seems like the real issue here is showing "Access Denied" when trying to delete a file that has already been logically deleted.  I don't know if that's the actual error code returned by the filesystem or if Explorer is (mis)interpreting it, but if Explorer showed a message saying "This file is pending deletion and will be removed once all references to it are closed or the system is restarted."  Or throw something...Read moreIt seems like the real issue here is showing “Access Denied” when trying to delete a file that has already been logically deleted.  I don’t know if that’s the actual error code returned by the filesystem or if Explorer is (mis)interpreting it, but if Explorer showed a message saying “This file is pending deletion and will be removed once all references to it are closed or the system is restarted.”  Or throw something in there about “apps”.
+I’ve noticed that Access Denied is a pretty common catch-all error in Win32, essentially having become equivalent to “request failed for some reason”.
+Read less
+
+
+
+
+
+
+
+Sukru Tikves  January 26, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+The Linux/UNIX way is slightly better.
+They remove the directory entry, but keep the allocation on the file system. When there are zero "hard links" the file is then reclaimed.
+There are strange situations, where a file can be deleted, and another one can be written with the same name. Now there could be two applications open files with the same name but different contents. A very good way to introduce bugs if files are used as...Read moreThe Linux/UNIX way is slightly better.
+They remove the directory entry, but keep the allocation on the file system. When there are zero “hard links” the file is then reclaimed.
+There are strange situations, where a file can be deleted, and another one can be written with the same name. Now there could be two applications open files with the same name but different contents. A very good way to introduce bugs if files are used as locking/synchronization primitives.
+Or the open handle can be used to write a new name while the file is deleted. It will essentially “undelete” the file:
+https://serverfault.com/a/238431
+Of course it is currently not feasible to change existing behavior.
+Read less
+
+
+
+
+
+
+
+Valts Sondors  January 26, 2022
+
+
+  0  Collapse this comment
+Copy link
+Is there also a Nuclear Option somewhere? Something like “Close all open handles to this file whether their applications want it or not, BWAHAHAHAHAHA”?
+
+
+
+
+
+Joshua Hudson  January 29, 2022
+
+
+  0  Collapse this comment
+Copy link
+In early 2020 a Visual Studio bug drove me to build said nuclear option. It works reliably unless somebody has a mapped section on the file.
+And no, it doesn't cause the cascading file handle problem because I did it right. With the target process paused, I closed the handle and opened a handle to NUL in the same slot. This takes a truly annoying amount of code because Win32 doesn't have int 21h function 46h....Read moreIn early 2020 a Visual Studio bug drove me to build said nuclear option. It works reliably unless somebody has a mapped section on the file.
+And no, it doesn’t cause the cascading file handle problem because I did it right. With the target process paused, I closed the handle and opened a handle to NUL in the same slot. This takes a truly annoying amount of code because Win32 doesn’t have int 21h function 46h. Now how the VDM provides this function is anybody’s guess.
+I never could locate all the mapped sections and replace them with swap-backed sections. If there’s a mapped section the operation fails.
+Read less
+
+
+
+
+
+
+
+Nick  January 26, 2022
+
+
+  0  Collapse this comment
+Copy link
+Force-closing handles is usually a bad idea.
+(I love that after almost 20 (!) years of blogging and magazine articles, at this point you can find a post by Raymond on almost any topic.  Maybe it needs a cool Internet-rule name, like the “Raymond Completeness Conjecture”.)
+
+
+
+
+Mystery Man  January 26, 2022
+
+
+  0  Collapse this comment
+Copy link
+I’ve never seen such behavior from File Explorer. It either deletes the file or generates an error message. Sometimes, it even finds out which app is locking the file, preventing its deletion.
+
+
+
+
+
+Sunil Joshi  January 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+I think I read that this behaviour can be changed by FILE_DISPOSITION_POSIX_SEMANTICS?
+
+
+
+
+
+Joshua Hudson  January 25, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+If it can I want to know exactly how to do it.
+I took to renaming the file before deleting it in application code because this misfeature stinks to high heaven.
+Now someone's going to come along and say some application might be depending on the old behavior. Well let them have their old behavior until they're fed up with it. My code doesn't need this, nor do the files that my code manipulate because again they're...Read moreIf it can I want to know exactly how to do it.
+I took to renaming the file before deleting it in application code because this misfeature stinks to high heaven.
+Now someone’s going to come along and say some application might be depending on the old behavior. Well let them have their old behavior until they’re fed up with it. My code doesn’t need this, nor do the files that my code manipulate because again they’re opened by more of my own code. The only thing that needs this is Windows, and as exhibited by the rename-out-of-the-way working, Windows doesn’t need it either.
+But occasionally the OS crashes while a handle is still open, leaving the renamed file sitting around forever. Booo.
+Read less
+
+
+
+
+
+
+
+David Trapp  January 27, 2022
+
+
+  0  Collapse this comment
+Copy link
+You could additionally schedule the file for deletion on reboot.
+
+
+
+
+
+Sunil Joshi  January 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+Unfortunately that flag needs to be set by the program or driver doing the delete – I saw this in the file system implementation of the MSVC STL:
+Link to Source.
+
+
+
+
+
+Joshua Hudson  January 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+Doesn’t work. The Windows Executable Loader is still the offender.

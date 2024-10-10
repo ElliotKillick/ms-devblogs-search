@@ -1,0 +1,93 @@
+Jaroslav Smid  February 10, 2021
+
+
+  0  Collapse this comment
+Copy link
+I don't think this is all safe. What if I have a DLL with a COM class and I want to store a singleton from this DLL. This DLL is then unloaded, but the object is stuck in some global application storage and contains vtable pointers to code segments, that are no longer in memory. It is quite common that COM objects are in separate libraries and COM does unload them if DllCanUnloadNow returns TRUE....Read moreI don’t think this is all safe. What if I have a DLL with a COM class and I want to store a singleton from this DLL. This DLL is then unloaded, but the object is stuck in some global application storage and contains vtable pointers to code segments, that are no longer in memory. It is quite common that COM objects are in separate libraries and COM does unload them if DllCanUnloadNow returns TRUE. I guess that you would have to implement such function as to simply return false. Could I just use static storage in my DLL? Am I guaranteed, that my class DLL is unloaded before COM shuts down? If no, than I think the best approach is to have some kind of reference counted global state and store a weak pointer in DLL’s static storage and just get reference to the object (or create a new one) when class factory is created and store it in class factory and let the factory pass the reference to created objects. And the global state will be simply released when last object is destroyed. Of course this would add overhead of creating the global state again and again if all your objects are destroyed and then new ones are created first.
+Read less
+
+
+
+
+
+
+
+Emily Bowman  February 10, 2021
+
+
+  0  Collapse this comment
+Copy link
+COM is still basically the very same animal it was ~30 years ago, so I don’t know why you came to ask such basic questions here. It’s still just COM.
+
+
+
+
+
+紅樓鍮  February 10, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+If DllCanUnloadNow returns TRUE while there are still living objects referencing code in that DLL, I’ll consider it a broken DllCanUnloadNow.
+
+
+
+
+紅樓鍮  February 9, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+I’m afraid the GetSingleton function is not correct, because the function is templated over Maker, which means each instantiation of the function template will have its own lock static variable (z/oe8YnT).  If two sites of invocation pass in the same name and two different lambdas, the accesses will not be serialized.
+
+
+
+
+
+Ivan K  February 10, 2021
+
+
+  0  Collapse this comment
+Copy link
+I thought the mangled name of Maker would be the same for different lambdas with the same “signature”, but it seems that the mangled names of two different lambda variables of what I thought of as the same type (“function” signature) are not the same and thus the statics (addressof) in GetSingleton (for example) are not the same. Probably for good reasons…
+Passing the exact same lambda variable works as expected as you say.
+
+
+
+
+
+紅樓鍮  February 10, 2021
+
+
+  0  Collapse this comment
+Copy link
+Jason Turner has excellent videos on lambdas on YouTube, I highly recommend checking them out
+
+
+
+Marek Knápek  February 9, 2021
+
+
+  0  Collapse this comment
+Copy link
+Is this intentional or is it a copy & pasta bug?
+    found = props.TryLookup(name);
+    if (auto found = props.TryLookup(name)) {
+
+
+
+
+
+Jacob Manaker  February 9, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+Two points that weren't obvious to me:
+* The use of a lock isn't COM-specific; you needed synchronization primitives back in 2011 for non-COM global singletons.
+* The COM store is for more than singletons, so it supports overwriting stored objects (I think?).  The problem with the original code isn't so much the race; it's that <code> might overwrite the singleton you already stashed away.  Otherwise, you could just make sure to return...Read moreTwo points that weren’t obvious to me:
+* The use of a lock isn’t COM-specific; you needed synchronization primitives back in 2011 for non-COM global singletons.
+* The COM store is for more than singletons, so it supports overwriting stored objects (I think?).  The problem with the original code isn’t so much the race; it’s that
+CoreApplication::Properties().Insert
+ might overwrite the singleton you already stashed away.  Otherwise, you could just make sure to return whatever’s in the store following a (possibly no-op) write.
+Read less

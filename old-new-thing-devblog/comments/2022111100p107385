@@ -1,0 +1,52 @@
+Antonio Rodríguez  November 11, 2022
+
+
+  0  Collapse this comment
+Copy link
+All this could be summarized by "parallel operations, by default, run in parallel".
+If you are issuing multiple writes to the same part of a file from the same thread, you should go back, think about what you are doing, and coalesce those multiple writes in a single, larger one, perhaps by placing the data in a memory buffer. Processors nowadays are thousands of times faster than SSDs (and millions faster than physical hard drives), so...Read moreAll this could be summarized by “parallel operations, by default, run in parallel”.
+If you are issuing multiple writes to the same part of a file from the same thread, you should go back, think about what you are doing, and coalesce those multiple writes in a single, larger one, perhaps by placing the data in a memory buffer. Processors nowadays are thousands of times faster than SSDs (and millions faster than physical hard drives), so this is an obvious optimization.
+I assume this article talks about operations issued from the same thread. If they were issued from different thread or processes, it wouldn’t make sense talking about the order they were issued in the first place. Threads from the same process could be arranged to write to a common buffer, or there could be one thread in charge of writing to the file. It would add complexity, but it could be done. Writes from different processes would be a horse of a different color: you could end having to create a server process of some kind, which maybe would not be worth the effort.
+Read less
+
+
+
+
+
+
+
+Simon Farnsworth  November 14, 2022
+
+
+  0  Collapse this comment
+Copy link
+Storage stacks often do a lot of these optimizations anyway, even if you don't - the OS kernel has writes go to an in-memory cache, and the OS then coalesces writes etc before sending them onto the storage controller. This acts the same way as the server process you propose for writes from different processes; as a nice side effect, it means that if you have multiple writes overlapping in both time and space, only...Read moreStorage stacks often do a lot of these optimizations anyway, even if you don’t – the OS kernel has writes go to an in-memory cache, and the OS then coalesces writes etc before sending them onto the storage controller. This acts the same way as the server process you propose for writes from different processes; as a nice side effect, it means that if you have multiple writes overlapping in both time and space, only one of them is normally sent to the storage device.
+In turn, storage controllers also do these sorts of optimizations; every HDD I’ve owned, and all the NVMe and SATA SSDs I’ve had don’t write straight to the non-volatile medium. Instead, they write to an on-device memory cache, and then write that cache out-of-order to the physical medium. Depending on the host interface, you either get completion of the I/O request when it’s in the device volatile cache, or when it’s written to physical medium (and there’s a *huge* set of complexity for OSes because there are also commands for waiting until the volatile cache is flushed to disk).
+Read less
+
+
+
+
+
+
+
+Antonio Rodríguez  November 15, 2022
+
+
+  0  Collapse this comment
+Copy link
+Yes, the good old “I don’t need to do this because somebody will end doing it”. Like in, I don’t need to make the dishes because my flatmate will eventually do it for me. Why bothering with destroying windows or closing files at process’ end, then? The OS will do it, too…
+
+
+
+
+
+Simon Farnsworth  November 18, 2022
+
+
+  1  Collapse this comment
+Copy link
+Indeed - why bother closing files at process end, when the OS will do it for you, and faster? Why do the dishes by hand if you have a dishwasher that does them for you? Why duplicate what the OS already does for you, when you can rely on the OS doing a good job?
+I've written more than one utility that just leaks all the dynamically allocated memory and files it opens - it's only...Read moreIndeed – why bother closing files at process end, when the OS will do it for you, and faster? Why do the dishes by hand if you have a dishwasher that does them for you? Why duplicate what the OS already does for you, when you can rely on the OS doing a good job?
+I’ve written more than one utility that just leaks all the dynamically allocated memory and files it opens – it’s only going to run for a few seconds, and the OS-level cleanup is faster than having my code do the cleanup, and then exiting.
+Read less

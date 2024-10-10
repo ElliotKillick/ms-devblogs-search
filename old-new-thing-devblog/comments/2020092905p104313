@@ -1,0 +1,108 @@
+Clockwork-Muse  September 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+This same sort of logic undergirds part of the .NET HTTP date parsing too.  That particular implementation was also returning a `DateTime` with `DateTimeKind` set to… `Undefined`.  Which means that if your server wasn’t running in UTC, date/time operations could return wrong results (not that C#’s `DateTime` is particularly friendly for general date/time operations anyways).
+The real travesty, however, is that HTTP dates aren’t in the ISO standard format.
+
+
+
+
+
+Thiago Macieira  September 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+> For example, Friday Friday Friday Friday Friday Friday Friday Friday parses to “day 5 of month 5 year 5, hour 5 minute 5, and 5 seconds” or “May 5, 2005 at 05:05:05 GMT”.
+Which is not a Friday.
+
+
+
+
+
+Raymond Chen Author
+September 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+Man, I wish I had thought of that joke.
+
+
+
+
+
+Rich G  September 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+Why does output vary at all according to the day of the week, when the day of the month along with the month and year ought to be both necessary and sufficient for determining the date from any meaningful input? (Unless one is either using the weekday to infer the century, which seems unlikely given the crude algorithm hinted at and the closing example; or else counting days in the first week of Creation, which...Read moreWhy does output vary at all according to the day of the week, when the day of the month along with the month and year ought to be both necessary and sufficient for determining the date from any meaningful input? (Unless one is either using the weekday to infer the century, which seems unlikely given the crude algorithm hinted at and the closing example; or else counting days in the first week of Creation, which on any reckoning predates RFC 822.)
+Read less
+
+
+
+
+
+
+
+Thiago Macieira  September 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+In this parser, you're probably right that parsing the day of the week was superfluous and unnecessary. At best you get information you already had; at worst you have conflicting or insufficient information. Suppose the input was "Sat, 30 Sep 2020 09:51:02": what do you do? 2020-09-30 is not a Saturday, it's a Wednesday. Similarly, if the input was "Sat, Sept 2020", you can't tell which Saturday in September was meant.
+So why should a parser...Read moreIn this parser, you’re probably right that parsing the day of the week was superfluous and unnecessary. At best you get information you already had; at worst you have conflicting or insufficient information. Suppose the input was “Sat, 30 Sep 2020 09:51:02”: what do you do? 2020-09-30 is not a Saturday, it’s a Wednesday. Similarly, if the input was “Sat, Sept 2020”, you can’t tell which Saturday in September was meant.
+So why should a parser even learn to parse day-of-weeks? Because some date formats could use the week number, like “Wed, week 40, 2020” that’s unambiguous (assuming sender and receiver agree on how to number weeks, like by adopting the ISO standard). There’s only one (ISO) week 40 in the year 2020 and there’s only one Wednesday in each week. This particular parser might have shared code with a different parser that accepted weekday-weeknumber as input, such as strptime with %U, %V or %W placeholders.
+At work, many people even refer to dates as “WW40.3”, where WW stands for “Work Week”, but the definition of the week numbers and which day in which is underspecified and does not match either %U, %V or %W, causing a shorthand that was meant to convey information to cause misunderstandings and back-and-forth emails asking for clarification. Just write “2020-09-30”.
+Read less
+
+
+
+
+
+
+
+Rich G  September 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+Thanks, a good point. Intrigued, I experimented with InternetTimeToSystemTime to see whether any combinations of input are parsed as multiples of weeks, but found only the expected proliferation of multiples of years, months, days, hours, minutes and seconds (or mixtures of some of these with the current date or time). On the other hand, "W" is the only character prefix to a single number which returns a non-error result; but this is as an offset...Read moreThanks, a good point. Intrigued, I experimented with InternetTimeToSystemTime to see whether any combinations of input are parsed as multiples of weeks, but found only the expected proliferation of multiples of years, months, days, hours, minutes and seconds (or mixtures of some of these with the current date or time). On the other hand, “W” is the only character prefix to a single number which returns a non-error result; but this is as an offset of days rather than weeks from 2000-00-00, and is presumably simply because “W” coincidentally is the only single letter that is unambiguously the start of only a particular day of the week. Of course weekday lookup numbers are needed for the reverse function InternetTimeFromSystemTime but it remains puzzling why they were factored into InternetTimeToSystemTime when nothing similar to the ISO formats is accepted.
+Belated correction: Ah, InternetTimeToSystemTime does faithfully convert the lookup value for the substring in the weekday position to the corresponding SYSTEMTIME.wDayOfWeek integer, indeed it does so regardless of whether it is the correct weekday for the specified date, and without causing the function to return an error if the combination gives a calendar discrepancy. So that explains why the substring is converted to a lookup value. Conversely, InternetTimeFromSystemTime entirely ignores the SYSTEMTIME.wDayOfWeek value in the input, calculating the weekday substring from the year/month/day and not returning an error even if the input is beyond 0 to 6. (SYSTEMTIME.wMilliseconds also has no effect on InternetTimeFromSystemTime except that it does cause the function to return an error if the input is beyond 0 to 999.)
+Read less
+
+
+
+
+
+Nick  September 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+It’s too bad we don’t have any days or months in English that begin with the letter C.  I’d really like it if “Chicken chicken chicken chicken chicken chicken chicken chicken” parsed as a date.
+This does sort of raise the question of just _how_ liberal you should be when accepting input.  When you get the wrong answer to the wrong question for the wrong reasons then something has gone, uh wrong, somewhere.
+
+
+
+
+
+Brian Olsen  September 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+If you prefer turkey, “Turkey turkey turkey turkey turkey turkey turkey turkey” should be valid.
+
+
+
+
+紅樓鍮  September 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+This makes me appreciate compile-time regular expressions even more.  Were there no regular expression-to-C compilers back in the 1990s though?

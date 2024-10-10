@@ -1,0 +1,190 @@
+dmex  July 24, 2019
+
+
+  0  Collapse this comment
+Copy link
+There are issues using the PROC_THREAD_ATTRIBUTE_PARENT_PROCESS flag... Environment variables for the new process are copied from the High-IL process not the Medium-IL process which cause issues with shell functions and some directory paths (%temp%, %userprofile% etc...) The token security descriptor for the process is also created without an ACE for the current user blocking access to most resources and the token security descriptor will also have a High-IL even though the process itself has a...Read moreThere are issues using the PROC_THREAD_ATTRIBUTE_PARENT_PROCESS flag… Environment variables for the new process are copied from the High-IL process not the Medium-IL process which cause issues with shell functions and some directory paths (%temp%, %userprofile% etc…) The token security descriptor for the process is also created without an ACE for the current user blocking access to most resources and the token security descriptor will also have a High-IL even though the process itself has a Medium-IL… This blocks the new process from accessing any system objects (events/pipes/sections/IPC etc…) while also blocking the process from opening its own process token with TOKEN_QUERY access. This seems to be a severe bug with the API but not sure if it’ll be fixed. As a workaround you can call CreateProcess a second time but from the new child process (without the PARENT_PROCESS flag) and it’ll be created with the correct token DAC security and environment variables (this is also why the above above sample doesn’t have issues with cmd.exe since it launches child processes).
+Read less
+
+
+
+
+
+
+
+Gavin Lambert  May 5, 2019
+
+
+  0  Collapse this comment
+Copy link
+There's a big caveat to this technique.  If the user has used "runas" or CreateProcessAsUser or similar to launch your process (or some parent of your process) under a different user account from the shell, then this would probably either fail with a permissions error or work but launch the child process under the original user account (which might annoy the actual user, since they presumably had a reason to switch user accounts in the...Read moreThere’s a big caveat to this technique.  If the user has used “runas” or CreateProcessAsUser or similar to launch your process (or some parent of your process) under a different user account from the shell, then this would probably either fail with a permissions error or work but launch the child process under the original user account (which might annoy the actual user, since they presumably had a reason to switch user accounts in the first place).  There also might be security problems if you then try to communicate between the two processes.
+Like Joshua Hudson stated, I’ve found that the best practice is to launch unelevated, then launch an elevated child that communicates back to its still-not-elevated parent if need be, rather than trying the reverse.  Although that can still be defeated by “runas”, in this case if the user chooses to run the original process as administrator — but that probably falls into the “doing what the user requested” bucket, so it’s still better than the above.
+Otherwise, the only other solution that seems safe is if Windows provided an API to acquire the corresponding non-elevated filtered token from a process’s current token, and then use CreateProcessAsUser to launch unelevated.  (It is probably currently possible to perform a combination of existing API calls to recreate a new filtered token, but since AFAIK the difference between the elevated and unelevated tokens is not entirely specified, that seems less safe than Windows providing an explicit API to do it.)  Although as Raymond pointed out in the original blog post, this is not necessarily correct either, if elevation occurred with credentials.
+Another possibility (if you don’t want an unelevated launchpad process) is to get your parent process’s token (at startup), then later use CreateProcessAsUser with that token to launch the unelevated process.  (Caveat: I haven’t checked if this actually works — there are probably cross-user permissions issues — and there’s a race condition if your parent process terminates before you have a chance to capture its token.  It’s also a bit tricky to get your parent process without its cooperation, which makes the launchpad process more attractive anyway.)
+Read less
+
+
+
+
+
+
+
+Gavin Lambert  May 6, 2019
+
+
+  0  Collapse this comment
+Copy link
+Also, curse this new blog system and its lack of proper paragraph formatting!  (And its erasure of all the comments on previous blog posts, which were often very useful.)
+
+
+
+
+Heiko Wetzel  April 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+As I saw your article I was very excited, because I'm looking for a working way to launch an unelevated process from an elevated process already for a long time. I used your code (enhanced with error checking) and was able to spawn an unelevated process. That's great. But I made the observation, that the unelevated process runs in a compatibility mode, the environment variable __COMPAT_LAYER in the unelevated process has the value "Installer". Is...Read moreAs I saw your article I was very excited, because I’m looking for a working way to launch an unelevated process from an elevated process already for a long time. I used your code (enhanced with error checking) and was able to spawn an unelevated process. That’s great. But I made the observation, that the unelevated process runs in a compatibility mode, the environment variable __COMPAT_LAYER in the unelevated process has the value “Installer”. Is there a way to prevent enabling the compatibility mode (for the new process) or can you explain, why the compatibility mode ist applied in this scenario? As I don’t know about the impact of the compatibility mode on the process, I can’t decide if it is safe to ignore it. Thanks 
+Read less
+
+
+
+
+
+
+
+Joe Beans  April 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+Going back to the spirit of the blog entry that led to this, is there a way we can just use the session token to create the new process exactly like an unelevated user? The only deterministic way of using the idea on this page is to always start a process chain with an unelevated stub zombie process so that you always have it available. Then inherit the full-access process handle to the "real" process...Read moreGoing back to the spirit of the blog entry that led to this, is there a way we can just use the session token to create the new process exactly like an unelevated user? The only deterministic way of using the idea on this page is to always start a process chain with an unelevated stub zombie process so that you always have it available. Then inherit the full-access process handle to the “real” process that actually does the work so that you’re guaranteed to have a secure working handle without a risky OpenProcess call.
+Read less
+
+
+
+
+
+
+
+Piotr Siódmak  April 25, 2019
+
+
+  0  Collapse this comment
+Copy link
+You’re using CreateProcessW, while passing STARTUPINFOEX, which I presume is defined as _STARTUPINFOEXA in your case since your int main takes char instead of wchar_t. Is that something to be worried about? Yay unicode!
+
+
+
+
+
+Me Gusta  April 25, 2019
+
+
+  0  Collapse this comment
+Copy link
+You can tell the compiler to use the Unicode versions of the Windows API without using the wide entrypoint.
+I agree that since CreateProcessW was used explicitly then it would be better to use STARTUPINFOEXW, but as it is, if UNICODE is defined then STARTUPINFOEX will be a typedef of _STARTUPINFOEXW.
+
+
+
+
+Mike Makarov  April 25, 2019
+
+
+  0  Collapse this comment
+Copy link
+Hi Raymond, I know you sometimes write entries about VS, compilers etc, so I wondered if this story could be interesting for you. https://developercommunity.visualstudio.com/content/problem/409959/cant-order-items-with-string-collection-editor.html?childToView=547467 Check the 2nd answer from Merrie McGaw. I can hardly express without swear words all the emotions this story sparks in me. IMHO, this is beyond the definition of absurd.
+
+
+
+
+
+Ian Yates  April 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+This answer: https://developercommunity.visualstudio.com/comments/547467/view.html
+?
+It sounds to me like the overriding directive was to make Visual Studio more accessible.  That's a worthy goal. 
+Unfortunately someone, who clearly doesn't use the dialog you're talking about, reimplemented it to support the main directive and the complete expense of people who were already using the dialog and understood its purpose.
+What's nice to see is that Microsoft have at least indicated they can see the problem, explained why it...Read moreThis answer: https://developercommunity.visualstudio.com/comments/547467/view.html
+?
+It sounds to me like the overriding directive was to make Visual Studio more accessible.  That’s a worthy goal. 
+Unfortunately someone, who clearly doesn’t use the dialog you’re talking about, reimplemented it to support the main directive and the complete expense of people who were already using the dialog and understood its purpose.
+What’s nice to see is that Microsoft have at least indicated they can see the problem, explained why it came about (finally!  that explanation could’ve reduced some stress on the many commenters so the change didn’t appear so random), and have promised a fix.  The fix sounds like the best of all worlds – you get the text editor back AND it’s going to be accessible.
+It does sound like it might take a while though…
+Read less
+
+
+
+
+
+
+Ji Luo  April 25, 2019
+
+
+  0  Collapse this comment
+Copy link
+I always wondered if you could use Task Scheduler to start a process as the login user. (I also wonder what happens if the user has killed Explorer and started an elevated instance of it, or even worse as someone else, in which case asking the shell to start a program doesn’t unelevate the process.)
+
+
+
+
+
+Henrik Andersson  April 25, 2019
+
+
+  0  Collapse this comment
+Copy link
+So that’s what the PROCESS_CREATE_PROCESS permission is for! The documentation team really needs to explain this stuff better. In particular, which process needs the permission. Or is it process handle? The documentation is a bit unclear.
+
+
+
+
+
+Raymond Chen Author
+April 25, 2019
+
+
+  0  Collapse this comment
+Copy link
+PROCESS_CREATE_PROCESS is an access right, so it applies to handles, not processes. There is only one handle involved in PROC_THREAD_ATTRIBUTE_PARENT_PROCESS. The second sentence should say “The handle must have…” rather than “the process must have…” I’ll submit a documentation change request.
+
+
+
+
+
+Kalle Niemitalo  April 25, 2019
+
+
+  0  Collapse this comment
+Copy link
+PROCESS_CREATE_PROCESS is explained a bit better at OB_PRE_CREATE_HANDLE_INFORMATION structure: “Create a new child process of the process.”
+
+
+
+
+W S  April 25, 2019
+
+
+  0  Collapse this comment
+Copy link
+“the shell process (usually explorer.exe)” What is your/the shell teams stance on 3rd-party shells? How to write a custom shell has never been documented and making a fully functioning one gets harder with each new Windows version. To make GetShellWindow and friends work correctly you have to call undocumented functions etc.
+
+
+
+
+
+Joshua Hudson  April 25, 2019
+
+
+  0  Collapse this comment
+Copy link
+Little programs do no error checking.
+Anybody using this needs to handle GetWindowThreadProcessId failing. If it fails you won't be able to de-elevate using this technique. I can't say for all cases but in my experience starting the child elevated is better than not at all.
+In the now-deleted comments of the prior thread the conclusion was the best way was to start your program non-elevated, elevate a child to do whatever (using a manifest),...Read moreLittle programs do no error checking.
+Anybody using this needs to handle GetWindowThreadProcessId failing. If it fails you won’t be able to de-elevate using this technique. I can’t say for all cases but in my experience starting the child elevated is better than not at all.
+In the now-deleted comments of the prior thread the conclusion was the best way was to start your program non-elevated, elevate a child to do whatever (using a manifest), and having the non-elevated parent start the non-elevated child. We may improve as follows: pass your own pid as a command line argument to the child being elevated and use that PID rather than the shell PID here.
+Read less
