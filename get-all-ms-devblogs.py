@@ -33,6 +33,14 @@ HEADERS = {
 # Luckily, we still have the downloads from before the redesign. However, the new format has changed and we now have comments support. As a result, stored blog entries before Macrch 15, 2005 remain in the old format.
 page_number = 1
 
+# NOTE
+# This script only gathers the first bunch of comments on an article (about 15).
+# The "Load more comments" button requires JavaScript, so this script cannot gather any more.
+# There aren't typically many comments on a single article, though.
+# In the future, we could do some Playwright automation to get these.
+#
+# Also know that while most comments are helpful, some of them contain technically misleading information.
+
 while True:
     listing_response = requests.get(f"{PAGE_LISTING_BASE_URL}{page_number}", headers=HEADERS)
     # Read until 404 status or another non-success status
