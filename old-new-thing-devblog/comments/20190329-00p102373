@@ -1,0 +1,74 @@
+aybe  April 1, 2019
+
+
+  0  Collapse this comment
+Copy link
+It was well worth the wait, you solved my async level loading problem in Unity so elegantly that I only have to add those helper methods between critical parts 🙂 Thanks a million Raymond !!! 
+
+
+
+
+
+Joe Beans  March 31, 2019
+
+
+  0  Collapse this comment
+Copy link
+The original Async CTP (C#) had thread switching as a concept but then it was taken out. It wasn't complete though. WinRT lumbered along late in the game. I promise you cannot scale as a human programmer without this paradigm.
+A few non-obvious key principles for WPF:
+- ref-count UI threads before exiting them (using statements are best), and on desired exit run the DispatcherFrame to flush events and check the count at the lowest...Read moreThe original Async CTP (C#) had thread switching as a concept but then it was taken out. It wasn’t complete though. WinRT lumbered along late in the game. I promise you cannot scale as a human programmer without this paradigm.
+A few non-obvious key principles for WPF:
+– ref-count UI threads before exiting them (using statements are best), and on desired exit run the DispatcherFrame to flush events and check the count at the lowest DispatcherPriority until the count goes to zero.
+– You want to enforce viewmodel thread affinity or this will get nasty. Put a Dispatcher property in every one of your viewmodels and make sure your viewmodel calls VerifyAccess(). Cross-thread dependency property assignments are sloppy and show that you don’t understand your own threading model, plus they’re impossible to ref-count. Switch to the UI thread before making the assignment, don’t just fire-and-forget.
+– Support a CancellationToken in the switch call so that if the target or source Dispatcher is shut down or shutting down you can abort the switch. Add a DispatcherPriority parameter to the switch (this matters with screen updates).
+– You must deterministically destroy all your viewmodels or the GC tree will get out of control. Give every viewmodel a cancellation token and implement IDisposable. This token will be used to interrupt thread switches.
+– Make the switch call an extension method on Dispatcher to make the code look unintimidating.
+public static void SwitchToAsync(this Dispatcher dispatcher,DispatcherPriority priority = DispatcherPriority.Send,CancellationToken cancellationToken = default);
+– Don’t use the SynchronizationContext to detect the thread, use (Dispatcher.Thread == Thread.CurrentThread) or save the thread ID separately so you don’t risk creating Dispatchers on the thread pool. The reason is that WPF lets you create custom DispatcherSynchronizationContext to set the DispatcherPriority that Post() uses. You will be using SwitchTo methods to compose enclosing Task methods that handle the SynchronizationContext implicitly.
+– Always trap the switch call. UI threads end when the user wants them to.
+– Example code:
+public async Task StuffAsync(){try{using (RefCountCurrentThread()){await SwitchToThreadPoolAsync();// ….await Dispatcher.SwitchToAsync(DispatcherPriority.Render, _disposalCancellationToken);}}catch{// etc…}}
+This subject really deserves a Microsoft Press book but nobody writes those anymore.
+Read less
+
+
+
+
+
+
+
+毅 吕  March 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+Thanks for your better edition of thread switching. I’ve added all document comments and post your code and this page link at the end of my article: https://blog.walterlv.com/post/bring-thread-switching-tasks-to-csharp-for-wpf.html
+
+
+
+
+
+Damien Knapman  March 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+Something is screaming at me that there must be a neat way to get the appropriate SynchronizationContext injected into this setup and to use that instead of having three different implementations (and having to pass a relevant control every time when trying to "get back" to the UI). Haven't worked it out yet though.
+I suppose we could capture it during the first call to ResumeBackgroundAsync but that still leaves a gap if that's not the...Read moreSomething is screaming at me that there must be a neat way to get the appropriate SynchronizationContext injected into this setup and to use that instead of having three different implementations (and having to pass a relevant control every time when trying to “get back” to the UI). Haven’t worked it out yet though.
+I suppose we could capture it during the first call to ResumeBackgroundAsync but that still leaves a gap if that’s not the first call to TaskSwitcher.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+March 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+The tricky part is defining "appropriate". (When you say you want to "go back to where you started", you first have to define when "start" happens.) At the "start", you can grab the  and remember it as the "place to get back to". You can then use this code to  to switch back to "where you were when you started". (Note that this is basically what the default  infrastructure does. It defines...Read moreThe tricky part is defining “appropriate”. (When you say you want to “go back to where you started”, you first have to define when “start” happens.) At the “start”, you can grab the SynchronizationContext.Current and remember it as the “place to get back to”. You can then use this code to await synchronizationContext; to switch back to “where you were when you started”. (Note that this is basically what the default Task infrastructure does. It defines “start” as “begin to await”, and when the operation completes, it uses the saved SynchronizationContext to get back to the thread that performed the await.)
+Read less

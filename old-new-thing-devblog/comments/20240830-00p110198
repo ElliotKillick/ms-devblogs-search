@@ -1,0 +1,93 @@
+Shawn Van Ness  August 31, 2024
+
+
+  1  Collapse this comment
+Copy link
+Some minor PTSD here .. LUID is defined as a struct of two 32-bit values, not a 64-bit int (or a union of those things like LARGE_INTEGER), so this can have an unexpected effect on packing and alignment when used in other structures, such as TOKEN_PRIVILEGES { DWORD count, LUID luid, DWORD attributes }
+Once had some C# code working ok on 32-bit OS but crashing on 64-bit..  took a little while to pinpoint this.
+<code>
+Read moreSome minor PTSD here .. LUID is defined as a struct of two 32-bit values, not a 64-bit int (or a union of those things like LARGE_INTEGER), so this can have an unexpected effect on packing and alignment when used in other structures, such as TOKEN_PRIVILEGES { DWORD count, LUID luid, DWORD attributes }
+Once had some C# code working ok on 32-bit OS but crashing on 64-bit..  took a little while to pinpoint this.
+[StructLayout(LayoutKind.Sequential, Pack=4)]
+internal struct TokenPrivileges
+{
+    public uint PrivilegeCount;
+    public Int64 Luid;//must use Pack=4 to achieve desired offset.. else model LUID as {uint32,int32} struct per winnt.h
+    public uint Attributes;
+}
+Read less
+
+
+
+
+
+
+
+Peter Cooper Jr.  August 30, 2024
+
+
+  0  Collapse this comment
+Copy link
+The links to the kernel documentation and the SDK documentation go to the same place; I presume the latter is supposed to point somewhere else in the giant pile of documentation from Microsoft.
+Thanks.
+
+
+
+
+
+Nick  August 30, 2024
+
+
+  1  Collapse this comment
+Copy link
+Can’t help but think that this could just be, more or less, somewhere in the kernel:
+static long long int s_luid = 0;
+static long long int AllocateLocallyUniqueId() { return s_luid++; }
+Making updates atomic is left as an exercise for the reader.
+(note: I am not a kernel developer and haven’t touched C in 15 years)
+
+
+
+
+
+Paul Jackson  September 1, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+That’s exactly how it’s done.
+x.com/0gtweet/status/1829576931496669207
+
+
+
+
+
+Kyle Sluder  August 31, 2024
+
+
+  0  Collapse this comment
+Copy link
+See Shawn’s comment about the type actually being defined as a pair of 32-bit integers. Depending on the platform, the compiler may or may not lay out such a struct identically to a single 64-bit integer.
+
+
+
+Shawn Van Ness  August 31, 2024
+
+
+  0  Collapse this comment
+Copy link
+Sometimes it’s important that IDs are not so easily guessable (not sure if that’s the case for LUID, but maybe).
+
+
+
+
+
+紅樓鍮  September 2, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+This can be done using a 64-bit block cipher with a 64-bit block size operated in CTR mode: you just successively encrypt 0, 1, 2, … with the block cipher to get the LUIDs. (Actually you should start from a random initialization vector instead of 0, but.)
+A 64-bit cipher is really weak however, so at the end of the day it might not be possible to make LUIDs cryptographically unpredictable. Edit: I confused the block...Read moreThis can be done using a 64-bit block cipher with a 64-bit block size operated in CTR mode: you just successively encrypt 0, 1, 2, … with the block cipher to get the LUIDs. (Actually you should start from a random initialization vector instead of 0, but.)
+A 64-bit cipher is really weak however, so at the end of the day it might not be possible to make LUIDs cryptographically unpredictable. Edit: I confused the block size with the key size; there are secure block ciphers with a 64-bit block size that have larger key sizes, such as IDEA.
+Read less

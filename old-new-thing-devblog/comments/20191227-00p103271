@@ -1,0 +1,287 @@
+Eric Lippert  January 7, 2020
+
+
+  0  Collapse this comment
+Copy link
+A potential pitfall of the "CastTo" that is avoided by the "As" is that "CastTo" does not have the same semantics as the cast operation. Another comment noted that CastTo does not respect user-defined conversions. But also, because CastTo boxes value types, the unboxing cast is required to be representation-preserving! Casting, say, a double to int would work differently with CastTo and an old-fashioned cast to int. Of course "As" avoids this by not working...Read moreA potential pitfall of the “CastTo” that is avoided by the “As” is that “CastTo” does not have the same semantics as the cast operation. Another comment noted that CastTo does not respect user-defined conversions. But also, because CastTo boxes value types, the unboxing cast is required to be representation-preserving! Casting, say, a double to int would work differently with CastTo and an old-fashioned cast to int. Of course “As” avoids this by not working on any value types.
+The larger point here is: the cast operation is yet another unfortunate example of a feature found in C that is frankly not that great that has made it into C#. I have often pointed out that casting has multiple inconsistent meanings in C#; it means both “I know better than the compiler what the real type of this expression is; crash if I am wrong”, and also “the compiler knows the real type of this expression as well as I do, but I want a related value of a different type; figure out how to get it”. By trying to be all things at once, and having an ambiguous and over-parenthesized syntax, the whole thing becomes far more complicated and unwieldy than it needs to be.
+Read less
+
+
+
+
+
+
+
+Marc Selman  January 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+Here's a way to write it using LINQ:
+var thing = (
+        from s in new int[] { 0 }
+        let comboBox = sender as ComboBox
+        let selectedItem = comboBox.SelectedItem as ComboBoxItem
+        where selectedItem != null
+        let tag = selectedItem.Tag as Thing
+        select tag
+).FirstOrDefault();
+It's easy to read, uses temporary variables so you can easily do null checks etc.
+The only downside is having to create the initial array to enumerate.
+Read moreHere’s a way to write it using LINQ:
+var thing = (
+        from s in new int[] { 0 }
+        let comboBox = sender as ComboBox
+        let selectedItem = comboBox.SelectedItem as ComboBoxItem
+        where selectedItem != null
+        let tag = selectedItem.Tag as Thing
+        select tag
+).FirstOrDefault();
+It’s easy to read, uses temporary variables so you can easily do null checks etc.
+The only downside is having to create the initial array to enumerate.
+Read less
+
+
+
+
+
+
+
+Kenny  December 30, 2019
+
+
+  0  Collapse this comment
+Copy link
+Here’s an item I like use and share. Since an empty string often signals the same condition as a null, but cannot participate in null operators, I usually add this extension:
+namespace Extensions
+{
+    public static class StringExtensions
+    {
+        public static string NullIf(this string str) => string.IsNullOrWhitespace(str) ? null : str;
+    }
+}
+That allows this:
+if (string.IsNullOrWhitespace(someString))
+{
+    return “-No Entry-“;
+}
+else
+{
+    return someString;
+}
+to become:
+return someString.NullIfEmpty() ?? “-No Entry-“;
+
+
+
+
+
+MgSam  December 30, 2019
+
+
+  0  Collapse this comment
+Copy link
+I’ve always found it wildly inconsistent that the BCL team decided to add Cast() to LINQ, but having a similar method on T is somehow controversial.
+
+
+
+
+
+Ivan Kljajic  December 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+Might look more at home in a huge chain of linq than a bunch of casts. Tho’ if at the start then maybe no big diff, especially if assigned to a var on the preceeding line.
+
+
+
+
+
+Henke37  December 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+Seems like a design flaw to need the first two casts. The listener already knows that it is an object with a selection. That’s one flaw. Then that object should know that the selected item is of Item type and that the Item type has a Tag field.
+
+
+
+
+
+Kenny  December 30, 2019
+
+
+  0  Collapse this comment
+Copy link
+Most of WinForms objects predate generics, hence needing to cast something you don't know about (the Thing). For items the authors did know about, polymorphism still caused issues. ComboBox descends from ListBox (ListControl?) which provide most of the base functionality but cannot know what kind of items to store in it's non-generic collection, hence Object. And here is the other problem, they were building using the System.Collections namespace objects which we have mostly abandoned for...Read moreMost of WinForms objects predate generics, hence needing to cast something you don’t know about (the Thing). For items the authors did know about, polymorphism still caused issues. ComboBox descends from ListBox (ListControl?) which provide most of the base functionality but cannot know what kind of items to store in it’s non-generic collection, hence Object. And here is the other problem, they were building using the System.Collections namespace objects which we have mostly abandoned for System.Collections.Generics.
+Read less
+
+
+
+
+
+
+
+Dave Bacher  December 30, 2019
+
+
+  0  Collapse this comment
+Copy link
+The tag behavior is a carry over from Visual Basic's ComboBox, also - which worked this same way.
+And so with default settings in WinForms, this works from VB.NET 1.0:
+   Dim tag = ComboBox1.SelectedItem.Tag ' <= can throw an exception
+And so you don't need the cast at all - with Option Strict on, it'll catch it - but then you can rewrite to:
+   Dim tag = ComboBox1.SelectedItem!Tag ' <== use...Read moreThe tag behavior is a carry over from Visual Basic’s ComboBox, also – which worked this same way.
+And so with default settings in WinForms, this works from VB.NET 1.0:
+   Dim tag = ComboBox1.SelectedItem.Tag ‘ <= can throw an exception
+And so you don't need the cast at all – with Option Strict on, it'll catch it – but then you can rewrite to:
+   Dim tag = ComboBox1.SelectedItem!Tag ' <== use late binding
+And so you're covered! 😉
+My argument would have been in .NET 2.0, adding generic versions of the WinForms controls would not have been difficult (could just wrap the non-Generic), and therefore they could have fixed this.  Easy enough to have a ComboBox just like they have List but didn’t remove List, ArrayList, etc.
+I like Raymond’s approach, but I’d actually – for combo boxes – move that expression into an extension:
+   var item = ComboBox1.GetSelectedItemAs();
+   var tag = ComboBox1.GetSelectedTagAs();
+No reason to have the expression copied a hundred places in the code, lets make it easy to read if we’re defining an extension function anyway?
+Read less
+
+
+
+
+
+
+
+Craig Powers  December 31, 2019
+
+
+  0  Collapse this comment
+Copy link
+As I recall, “late binding” is not really what the VB.NET bang operator does.  Rather, !Tag translates directly to .Item(“Tag”) (which is an early-bound call with a string argument).
+
+
+
+
+Raymond Chen Author
+December 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+This is a generic event raised by a control. The control doesn’t know what type of objects have been placed inside it, but the client does. Similarly, the item doesn’t know what the client put in the Tag, but the client knows.
+
+
+
+
+Chris Meadowcroft  December 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+Count me in the “cool trick” camp, though I’d say it’s more “creating a fluent syntax for casts” than the pejorative “trick”. The left-to-right syntax, avoiding braces nesting, is a big improvement to readability in my opinion.
+
+
+
+
+
+Wayne Venables  December 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+For converting strings to other types, I have this extension method in my code.  If the type parameter is a nullable type, it will return null if the conversion is not possible otherwise it just fails:
+        public static T ConvertTo(this string value)
+        {
+            var type = typeof(T);Read moreFor converting strings to other types, I have this extension method in my code.  If the type parameter is a nullable type, it will return null if the conversion is not possible otherwise it just fails:
+        public static T ConvertTo(this string value)
+        {
+            var type = typeof(T);
+            if (type == typeof(string)) return (T)(object)value;
+            var typeConverter = System.ComponentModel.TypeDescriptor.GetConverter(Nullable.GetUnderlyingType(type) ?? type);
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable))
+            {
+                if (string.IsNullOrWhiteSpace(value)) return default(T);
+                if (!typeConverter.IsValid(value)) return default(T);
+            }
+            return (T)typeConverter.ConvertFromString(value);
+        }
+I have a few variations on this code: versions where you can specify a default value, use on an IEnumerable, etc.  I end up calling this extension method a lot.
+Read less
+
+
+
+
+
+
+
+Stuart Ballard  December 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+I'm a big fan of convenience extension methods and I'd love to have something like these as part of the language, but the issue I have with this particular implementation is that it behaves subtly differently from how you might expect, and as far as I can tell there's no way to make it work "right". One problem is that the extension method causes an implicit cast to object before doing the cast to the...Read moreI’m a big fan of convenience extension methods and I’d love to have something like these as part of the language, but the issue I have with this particular implementation is that it behaves subtly differently from how you might expect, and as far as I can tell there’s no way to make it work “right”. One problem is that the extension method causes an implicit cast to object before doing the cast to the target type, so it bypasses all the compiler’s static type checking to verify that the cast is legal. The other is that this approach ignores any custom overloads of the casting operator that may be applicable.
+I don’t think it’s possible to get a “correct” implementation of these extension methods without dedicated language support, unfortunately.
+Read less
+
+
+
+
+
+
+
+Brian  January 2, 2020
+
+
+  0  Collapse this comment
+Copy link
+You could solve this problem the same way Microsoft solved it for classes like Convert and BitConverter: Implement each object individually.  Something like:
+public static T CastTo(this SomeClass o) where T: SomeClass
+Of course, this means that anyone who uses CastTo and has it “fail” needs to add new entries.  A dirty rotten hassle.
+
+
+
+
+
+Nor Treblig  December 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+I agree: extension methods can be neat but those two are not a good idea for the reasons you have mentioned.
+Also it’s not such a good idea to hide simple things in extension methods since it makes the code harder too read for others, especially when it turns out that it looks like simple casts but then actually may have unexpected behaviour vs. doing it the normal way.
+
+
+
+
+Norman Fleming  December 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+Why not just make it multiple lines of code. I really don’t see why so many people are advocating for pre-obfuscating their source code into a single line.
+When a line has a single cast or operation it is readable and much less likely to be mis-understood.
+You should really be dealing with the Nothing/Null objects that may be returned at each step anyway as they probably have some meaning to be dealt with.
+
+
+
+
+
+Raymond Chen Author
+December 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+The downside of multiple lines is that you have to make up names for each of the intermediate results, and names suggest that the value may be needed again later in the method.
+
+      var ajaxurl_comments = 'https://devblogs.microsoft.com/oldnewthing/wp-admin/admin-ajax.php';
+var parent_post_id = 103271;
+var cpage = 1;
+Load more comments
+if(sessionStorage.getItem("cm_order_reverse")) {
+sessionStorage.removeItem("cm_order_reverse");
+}
+
+if(sessionStorage.getItem("cm_order_by_votes")) {
+sessionStorage.removeItem("cm_order_by_votes");
+}
