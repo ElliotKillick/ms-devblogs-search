@@ -41,6 +41,22 @@ page_number = 1
 #
 # Also know that while most comments are helpful, some of them contain technically misleading information.
 
+def html_escape_sequences_to_plaintext(html: str) -> str:
+    """
+    Translate HTML escape sequences to its plaintext equivalent.
+
+    This mostly involves removing invisisble HTML escape sequences.
+    These HTML escape sequences can be problematic when searching the output.
+    """
+
+    return (html
+           .replace('\u00AD', '')   # Soft hyphen (&shy;): The new blogging system may place these in a <code> tag
+           .replace('\u200B', '')   # Zero-width space
+           .replace('\u200C', '')   # Zero-width non-joiner
+           .replace('\u200D', '')   # Zero-width joiner
+           .replace('\uFEFF', '')   # Zero-width no-break space
+           .replace('\u00A0', ' ')) # Non-breaking space (&nbsp;)
+
 while True:
     listing_response = requests.get(f"{PAGE_LISTING_BASE_URL}{page_number}", headers=HEADERS)
     # Read until 404 status or another non-success status
@@ -69,9 +85,10 @@ while True:
         meta_tree = entry_tree.findall("head/meta")
         meta_text = ""
         for meta_tag in meta_tree:
-            meta_text += etree.tostring(meta_tag, pretty_print=True).decode()
+            meta_text += etree.tostring(meta_tag, method='html', encoding='unicode');
         # Cleanup output
         meta_output = meta_text.replace('\t', '').replace('\n\n', '\n')
+        meta_output = html_escape_sequences_to_plaintext(meta_output)
 
         # The meta tags don't include article:tag metadata, so manually parse those fields out here
 
@@ -94,6 +111,7 @@ while True:
         article_text = ''.join(article_tree.itertext())
         # Clean up and put extra newline before article contents for spacing
         article_output = "\n" + article_text.lstrip().rstrip()
+        article_output = html_escape_sequences_to_plaintext(article_output)
 
         # Get the comments
         comments_tree = entry_tree.find("body//main//ul[@class='commentlist']")
@@ -107,6 +125,7 @@ while True:
         # 4. Leading/trailing whitespace trim
         comments_output = re.sub(r'[ ]+\n', '\n', comments_text.replace('\t', '')
                           .replace('\n\n\n', ' ')).lstrip().rstrip()
+        comments_output = html_escape_sequences_to_plaintext(comments_output)
 
         # Use article path substring as its identifier
         article_path_part = ''.join(link.split("/")[-2:])
@@ -124,6 +143,5 @@ while True:
         # Store comments in a separate file
         with open(f"{OUTPUT_DIRECTORY}/comments/{article_file_name}", 'w') as comments_file:
             comments_file.write(comments_output)
-
 
     page_number += 1
