@@ -1,0 +1,181 @@
+alan robinson  June 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+All potentially ugly, but somewhat more tolerable if the compiler raises a warning. Do they? I’ve never dealt with counted strings.  Of course warnings can go wrong; I am Soooooo tired of being warned about float to int conversions, for instance.
+
+
+
+
+
+Jacob Manaker  June 20, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+I think it's irresponsible to present such trancation as a fixable problem, rather than a sign that something much deeper has gone wrong.  Two of the data types you mention (std::string, std::wstring) and most custom string classes are specifically designed to hold strings of textual data that do not contain embedded nulls, precisely because they use the null character as an invalid sentinel value.  Storing in them a sequence of chars that may contain this sentinel value as valid data is an API contract violation.  The unexpected string truncation is then a symptom of the failure to...Read moreI think it’s irresponsible to present such trancation as a fixable problem, rather than a sign that something much deeper has gone wrong.  Two of the data types you mention (std::string, std::wstring) and most custom string classes are specifically designed to hold strings of textual data that do not contain embedded nulls, precisely because they use the null character as an invalid sentinel value.  Storing in them a sequence of chars that may contain this sentinel value as valid data is an API contract violation.  The unexpected string truncation is then a symptom of the failure to follow specifications, and the solution is not to paper over this particular failure mode but to redesign your program to follow the specifications of the libraries you use.
+If you’re using a protocol in which the null character is a valid data element, strongly consider redesigning your protocol.  There are plenty of other unusual characters with little-to-no valid use in modern computing (especially ‘\01’ through ‘\31’) to use a a sentinel.  If you cannot, then do not use built-in library types that are not designed to store such data.  Instead, roll your own data type or use a std::unique_ptr.
+Of course, BSTR and HSTRING exist for precisely this reason (they are “rolling [one’s] own data type”).  But the choice to allow embedded nulls as non-sentinels restricts interop with other protocols (especially the C++ stdlib!) as you detail.  It’s better not to use that “feature” of BSTR or HSTRING; if you have data with embedded nulls, stop thinking about it as textual data and just treat it as an untyped sequence of bytes.
+Read less
+
+
+
+
+
+
+
+Danielix Klimax  June 21, 2024
+
+
+  0  Collapse this comment
+Copy link
+Wrong. From Notes on c_str at cppreference:
+“The pointer obtained from c_str() may only be treated as a pointer to a null-terminated character string if the string object does not contain other null characters. ”
+Therefore we can assert that basic_string CAN contain NUL character, but you may be limited in interfacing with C-style APIs. There is no limitation on content of basic_string. (And it would be dumb to have it)
+
+
+
+
+
+Simon Farnsworth  June 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+I've just looked at my copy of ISO/IEC 14882:2003(E), an older version of the C++ standard, and it describes both std::string and std::wstring as containers for character type sequences, rather than the previously defined Null Terminated Character Type Sequence. It's also explicit about which constructors take a length, and which ones take an NTCTS and determine the length from the position of the null character type.
+I cannot find any language in section 21 (Strings Library) of C++ 2003 that so much as implies that std::basic_string and its specializations std::string and std::wstring are meant to hold strings of textual data that...Read moreI’ve just looked at my copy of ISO/IEC 14882:2003(E), an older version of the C++ standard, and it describes both std::string and std::wstring as containers for character type sequences, rather than the previously defined Null Terminated Character Type Sequence. It’s also explicit about which constructors take a length, and which ones take an NTCTS and determine the length from the position of the null character type.
+I cannot find any language in section 21 (Strings Library) of C++ 2003 that so much as implies that std::basic_string and its specializations std::string and std::wstring are meant to hold strings of textual data that do not contain embedded nulls – in all places where it could say that, it instead says that they’re meant to contain sequences of arbitrary characters.
+The only part of section 21 that is about strings without embedded nulls is 21.4 (Null-terminated sequence utilities), which uses char * and wchar_t * for character strings, not std::string and std::wstring.
+Has this really changed in more recent C++ standards? I can’t find any evidence that it has in online drafts, but I’m willing to be corrected.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+June 20, 2024
+
+
+  2  Collapse this comment
+Copy link
+I think it’s clear that std::string and std::wstring are intended to support embedded null characters. If they were intended to be null-terminated strings, then resize() shouldn’t change the length(), since it just adds nulls to the end.
+
+
+
+
+Dmitry  June 20, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+You seem to treat the problem with C/C++-coloured glasses. Those languages are actually not the whole world, and in the rest of the world binary safety of strings and performance are and have been for ages by now something to take care of.
+That some terribly designed language in the past (let’s not use the names, but it was C) decided to use slow and inefficient representation of strings should not be a big deal by now. Even C++ folks reinvented the wheel of counted strings. No #0 character (Pascal notation to make haters hate), ’cause a language from 1970s can’t...Read moreYou seem to treat the problem with C/C++-coloured glasses. Those languages are actually not the whole world, and in the rest of the world binary safety of strings and performance are and have been for ages by now something to take care of.
+That some terribly designed language in the past (let’s not use the names, but it was C) decided to use slow and inefficient representation of strings should not be a big deal by now. Even C++ folks reinvented the wheel of counted strings. No #0 character (Pascal notation to make haters hate), ’cause a language from 1970s can’t manage that? But int 21h/09h in MS-DOS used ‘$’ as a string terminator. Then no ‘$’ in string formats used for interoperation? So that no emulator or real DOS machine gets confused?
+And one more thing comes to mind: GetOpenFileName and a field in its structure parameter that specifies a set of filters by file mask. Actually it’s a sequence of null-terminated strings with zero-length one at the end. But since it’s a single field value, it’s also valid to treat it as a double-null-terminated string with embedded nulls as separators. Well, maybe it’s not really intended for human consumption as a whole (not all ”normal” strings actually are), but #0 is no more special than any other value, so I doubt it’s really worth a separate data type in any language other than a few with C background in their gynecological tree.
+Read less
+
+
+
+
+
+
+
+紅樓鍮  June 22, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+Bonus chatter:
+I doubt it’s really worth a separate data type in any language other than a few with C background in their gynecological tree.
+Modern languages (including those that don't descend from C) actually do have separate string and bytes types, but for a different reason: the string type is almost always restricted to containing only valid Unicode scalar values (and they're usually implemented as UTF-8/16/32 encoded strings that are known to be valid according to the encoding). Often in the more high-level languages, the string type presents itself as a logical sequence of Unicode scalar values rather than...Read moreBonus chatter:
+I doubt it’s really worth a separate data type in any language other than a few with C background in their gynecological tree.
+Modern languages (including those that don’t descend from C) actually do have separate string and bytes types, but for a different reason: the string type is almost always restricted to containing only valid Unicode scalar values (and they’re usually implemented as UTF-8/16/32 encoded strings that are known to be valid according to the encoding). Often in the more high-level languages, the string type presents itself as a logical sequence of Unicode scalar values rather than a physical sequence of UTF-8/16/32 code units, so indexing and searching on the string type will often give different results from the same operations on the underlying code unit array (if the language provides the means to access the underlying array of a string at all).
+When reading from and writing to files, “text mode”-opened files only interact with strings, and “binary mode”-opened files only interact with bytes.
+Read less
+
+
+
+
+
+Valts Sondors  June 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+I have only a surface level familiarity with C++, so I have a potentially silly question:
+std::string u = "hello\0world";
+Doesn’t the double-quoted string syntax also produce a null-terminated string which is then passed as a char* to some implicit conversion function on the std::string class? That would mean that the “world” doesn’t even make it into “u”, much less “cout”.
+
+
+
+
+
+deadcream  June 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+This is exactly what Raymond says in the comment onle line higher:
+// This also prints "hello"
+std::string u = "hello\0world";
+std::cout << u << std::endl;
+If you meant the original
+std::string s = "hello\0world"s;
+ in the beginning of the post, it’s different because here std::string is created using “s” literal (at the end of the line). User-defined (in this case standard library defined) string literals know the length of the whole string.
+
+
+
+
+
+Simon Farnsworth  June 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+You misquoted the critical bit from the article:
+<code>
+Turning this into a full program has it look like:
+<code>
+That "s" on the end invokes operator ""s, which is passed both a pointer to the string literal, and its length. This feature was introduced in C++11, under the name "User-defined literals" - your favourite C++ reference (I use cppreference.com) should explain how it works, and have documentation for std::literals::string_literals::operator""s
+Read moreYou misquoted the critical bit from the article:
+std::string u = "hello\0world"s;
+Turning this into a full program has it look like:
+#include <iostream>
+using namespace std::string_literals;
+
+int main() {
+    std::string s = "hello\0world"s;
+
+// This prints "hello<nul>world"
+std::cout << s << std::endl;
+return 0;
+}
+That “s” on the end invokes operator “”s, which is passed both a pointer to the string literal, and its length. This feature was introduced in C++11, under the name “User-defined literals” – your favourite C++ reference (I use cppreference.com) should explain how it works, and have documentation for std::literals::string_literals::operator””s
+Read less
+
+
+
+
+
+
+
+gast128  June 20, 2024
+
+
+  1  Collapse this comment
+Copy link
+Raymond uses a subtle “”s (see https://en.cppreference.com/w/cpp/string/basic_string/operator%22%22s)
+
+
+
+
+Antonio Rodríguez  June 19, 2024
+
+
+  0  Collapse this comment
+Copy link
+The proliferation of string types in C++ reminds me of this XKCD comic: https://xkcd.com/927/

@@ -1,0 +1,190 @@
+GL  March 21, 2024
+
+
+  0  Collapse this comment
+Copy link
+If I’m just tracking the monitor of the window, can I achieve it by listening for WM_DeviceChange, WM_DisplayChange, WM_WindowPosChanging, WM_WindowPosChanged?
+
+
+
+
+
+Raymond Chen Author
+March 22, 2024
+
+
+  0  Collapse this comment
+Copy link
+Sure. But this question was about detecting display orientation. You can try to infer portrait/landscape by looking at the dimensions, but that won’t distinguish between portrait and portrait-flipped, for example. (dmOrientation works only for printers.)
+
+
+
+
+
+Кирилл Ярин  March 25, 2024
+
+
+  0  Collapse this comment
+Copy link
+So, what is the best way to have a desktop application window with client area and some controls in it staying in the same physical place as screen rotates, while icons/text on these controls would follow the screen orientation?
+
+
+
+
+
+GL  March 26, 2024
+
+
+  0  Collapse this comment
+Copy link
+Most of the time, “nothing”. A screen rotation is a special case of resolution changes, so most apps and Windows already keep themselves/them at sane locations. Also, most apps only have to care about its window size, not the screen size/orientation.
+
+
+
+
+
+GL  March 22, 2024
+
+
+  1  Collapse this comment
+Copy link
+I think the fields are dmPelsWidth, dmPelsHeight, dmDisplayOrientation. According to the docs of Windows.Graphics.Display.DisplayOrientations and DEVMODEW, the result of GetcurrentOrientation should be consistent with the following:
+<code>
+Read moreI think the fields are dmPelsWidth, dmPelsHeight, dmDisplayOrientation. According to the docs of Windows.Graphics.Display.DisplayOrientations and DEVMODEW, the result of GetcurrentOrientation should be consistent with the following:
+DEVMODEW dm { .dmSize = sizeof(DEVMODEW) };
+if (!EnumDisplaySettingsExW(
+  nullptr,
+  ENUM_CURRENT_SETTINGS,
+  &dm,
+  EDS_RAWMODE | EDS_ROTATEDMODE)
+) throw "EnumDisplaySettngsEx call";
+if ((dm.dmFields & (DM_PELSWIDTH | DM_PELSHEIGHT))
+  != (DM_PELSWIDTH | DM_PELSHEIGHT)
+) throw "EnumDisplaySettngsEx fields";
+dm.dmDisplayOrientation &= (
+  (dm.dmFields & DM_DISPLAYORIENTATION) == DM_DISPLAYORIENTATION
+  ? 3 : 0
+); // ^^^ I am not sure if this guard is necessary.
+
+// Infer the orientation at rotation degree 0.
+auto const initial = (
+  // dmPelsWidth <=> dmPelsHeight  is landscape/portrait after rotation.
+  // dmDisplayOrientation          is rotation / (-pi/2).
+  ((dm.dmPelsWidth > dm.dmPelsHeight) ^ (dm.dmDisplayOrientation & 1))
+  ? 1 // Landscape in DisplayOrientations
+  : ((dm.dmPelsWidth < dm.dmPelsHeight) ^ (dm.dmDisplayOrientation & 1))
+  ? 2 // Portrait
+  : 3 // Landscape | Portrait
+  /* The documentation does not specify what happens
+  ** when the resolution is square.
+  ** Since DisplayOrientations is a [Flags] enumeration,
+  ** the sane result is a bitwise combination of both.
+  */
+);
+// Compute the orientation at current rotation.
+// The significance of bits in DisplayOrientation
+// is modulo 4 (plus 1 for every 90 degree clockwise),
+// consistent with the numeric value of dmDisplayOrientation.
+auto const current = ((
+  (initial << dm.dmDisplayOrientation) |
+  (initial >> (4 - dm.dmDisplayOrientation))
+) & 15u);
+
+Read less
+
+
+
+
+
+
+
+GL  March 22, 2024
+
+
+  0  Collapse this comment
+Copy link
+I made a complete example: https://gist.github.com/GeeLaw/11799094e137a4f60590a5b7162ba933
+
+
+
+
+Paulo Pinto  March 22, 2024
+
+
+  3  Collapse this comment
+Copy link
+As things turned out, it is quite safe to ignore anything related to UWP and stick to plain Win32.
+
+
+
+
+
+alan robinson  March 22, 2024
+
+
+  0  Collapse this comment
+Copy link
+I don’t think any of those tell you the orientation, though? if they do, jeeze that would be easier than the nonsense in today’ s post.
+
+
+
+
+
+Paulo Pinto  March 23, 2024
+
+
+  1  Collapse this comment
+Copy link
+You make use of ChangeDisplaySettingsEx () and EnumDisplaySettingsEx() family of functions, DEVMODE structure.
+The union field dmDisplayOrientation has what you’re looking for.
+
+
+
+
+
+Joe Beans  March 22, 2024
+
+
+  2  Collapse this comment
+Copy link
+That has been my strategy, just for the sheer sanity. Whenever I see new UWP functionality my first thought experiment is: “What Win32 APIs are they using for that?”
+
+
+
+Sigge Mannen  March 21, 2024
+
+
+  0  Collapse this comment
+Copy link
+What’s the reason that DisplayInformation needs a Queue? Is DispatcherQueue some sort of equavalent of message pump and DisplayInformation *thing* uses it to be able to serialize some calls across the threads, because DisplayInformation does its work on some ThreadPool and not on STA? Or am i confusing myself
+
+
+
+
+
+Yuri Khan  March 21, 2024
+
+
+  0  Collapse this comment
+Copy link
+I notice you talk about “the” monitor the window is on as if there is one and only one. The DisplayInformation documentation, too, mentions “if your app is moved from one monitor to another monitor” as if that’s an unambiguous atomic event such that one moment the window is on one monitor and the next moment suddenly on another.
+
+
+
+
+
+Chris Iverson  March 21, 2024
+
+
+  1  Collapse this comment
+Copy link
+You read the docs, and missed the line "A DisplayInformation instance does not map to a specific display, but instead tracks display-related information for wherever the application view is placed."
+My understanding is, it doesn't try to deal with monitor info, especially multimonitor info if your window is displayed across multiple monitors.
+It only deals with the properties that are applied to the window at that time. And only one monitor's properties can be applied to the window at one time, even if the window shows up on multiple monitors.
+You can prove this yourself with an easy example: a DPI-aware application and...Read moreYou read the docs, and missed the line “A DisplayInformation instance does not map to a specific display, but instead tracks display-related information for wherever the application view is placed.”
+My understanding is, it doesn’t try to deal with monitor info, especially multimonitor info if your window is displayed across multiple monitors.
+It only deals with the properties that are applied to the window at that time. And only one monitor’s properties can be applied to the window at one time, even if the window shows up on multiple monitors.
+You can prove this yourself with an easy example: a DPI-aware application and two monitors with different DPIs. If you position the DPI-aware window across the boundary between those two monitors, it won’t apply both DPIs. Instead, the DPI that will be applied to the window seems to be the DPI of the monitor that has the largest amount of the window on it. (In other words, the monitor that would be chosen by the MonitorFromWindow() API call.)
+“as if that’s an unambiguous atomic event such that one moment the window is on one monitor and the next moment suddenly on another”
+From the point of view of the above behavior(like the MonitorFromWindow() API call), there is such a moment: when the largest amount of window changes from one monitor to another. Using that DPI example, you can see this yourself by constantly moving the DPI-aware window around over the border between monitors. As the majority of the window area changes from one monitor to another, you will see the window change size, as the new DPI takes effect. And you will see that change back and forth as you move the window across back and forth.
+Read less

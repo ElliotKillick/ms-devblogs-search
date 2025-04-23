@@ -1,0 +1,133 @@
+Dmitry  December 11, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+Well, yes, I fully understand this. But the post says about code not throwing exceptions, just doing some stuff that involves exception throwing and catching internally. Say, if the fun() function in your example just touches a guard page or calls OutputDebugString, I wouldn’t expect the filter expression to be calculated since I wouldn’t expect any exception to jump out if the fun().
+In fact, it seems to be even more difficult. What if guard page gets touched while building a new stack frame for a function? What if the guard page touch occurs by building a new SEH frame on...Read moreWell, yes, I fully understand this. But the post says about code not throwing exceptions, just doing some stuff that involves exception throwing and catching internally. Say, if the fun() function in your example just touches a guard page or calls OutputDebugString, I wouldn’t expect the filter expression to be calculated since I wouldn’t expect any exception to jump out if the fun().
+In fact, it seems to be even more difficult. What if guard page gets touched while building a new stack frame for a function? What if the guard page touch occurs by building a new SEH frame on the stack? I used to think that guard page exceptions were handled in kernel mide with kernel stack used by the code doing the bookkeeping, since this involves changing system structures that shouldn’t normally be accessible to user mode code, so transparently to user mode application. And I wouldn’t expect a call to OutputDebugString to let its internal exception escape the function itself.
+P.S. Comments are totally broken. Replies come out as separate comments.
+Read less
+
+
+
+
+
+
+
+Dmitry  December 6, 2024
+
+
+  0  Collapse this comment
+Copy link
+Are you trying to say that having a call chain of functions A -> B -> C a guard page exception or a call to OutputDebugString in function C might cause stack unwinding that might end up in function A? And that for any function changing non-volatile registers one should build a stack frame with exception-handling related stuff? Sounds wrong to me.
+
+
+
+
+
+Me Gusta  December 8, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+As a potential hint, consider the context that the filter expression has to be handled in.
+<code>
+This is a small and silly example, but what would you expect the putwc to print? Because it is a stack variable, RBP/RSP (or platform equivalent) has to be set correctly to read it. So the search for a block that is capable of handling an exception also has to undo the context, even if the stack isn't unwound on the first pass.
+Had to edit this because the < and > were stripped out of the code block.
+Read moreAs a potential hint, consider the context that the filter expression has to be handled in.
+#include <Windows.h>
+#include <cstdio>
+
+int filter(unsigned int code, EXCEPTION_POINTERS *info, wchar_t c)
+{
+putwc(c, stdout);
+
+return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+void fun()
+{
+RaiseException(1, 0, 0, nullptr);
+}
+
+int wmain()
+{
+wchar_t c = L'a';
+
+__try
+{
+fun();
+}
+__except (filter(GetExceptionCode(), GetExceptionInformation(), c))
+{
+
+}
+
+return 0;
+}
+This is a small and silly example, but what would you expect the putwc to print? Because it is a stack variable, RBP/RSP (or platform equivalent) has to be set correctly to read it. So the search for a block that is capable of handling an exception also has to undo the context, even if the stack isn’t unwound on the first pass.
+Had to edit this because the < and > were stripped out of the code block.
+Read less
+
+
+
+
+
+
+Joshua Hudson  December 6, 2024
+
+
+  0  Collapse this comment
+Copy link
+[Comments appear to have been broken for two weeks--reposting]
+So I'm going to be that guy.
+We have one active case remaining where the assembly code is called without an unwind frame, and that's because the unwind frame is inexpressible and can't be changed to be expressible.
+Easy mode version: Assuming this implementation of FreeLibraryAndExitThread:
+volatile void WINAPI FreeLibraryAndExitThread(HINSTANCE hLibModule, DWORD dwExitCode)
+{
+   FreeLibrary(hLibModule);
+   ExitThread(dwExitCode);
+}
+The assembly code would look something like this:
+FreeLibraryAndExitThread:
+        sub rsp, 40
+        mov [rsp + 32], edx
+...Read more[Comments appear to have been broken for two weeks–reposting]
+So I’m going to be that guy.
+We have one active case remaining where the assembly code is called without an unwind frame, and that’s because the unwind frame is inexpressible and can’t be changed to be expressible.
+Easy mode version: Assuming this implementation of FreeLibraryAndExitThread:
+volatile void WINAPI FreeLibraryAndExitThread(HINSTANCE hLibModule, DWORD dwExitCode)
+{
+   FreeLibrary(hLibModule);
+   ExitThread(dwExitCode);
+}
+The assembly code would look something like this:
+FreeLibraryAndExitThread:
+        sub rsp, 40
+        mov [rsp + 32], edx
+        call FreeLibrary@8
+        mov ecx, [rsp + 32]
+        call ExitThread@8
+The trouble in writing down the unwind codes is after the FreeLibrary function returns, unwinding is not possible. The calling function’s unwind codes are gone.
+I have essentially the same thing only it does a few more calls between FreeLibrary and ExitThread.
+Read less
+
+
+
+
+
+
+
+Marcel Kilgus  December 6, 2024
+
+
+  0  Collapse this comment
+Copy link
+I have written my own crash reporter using a separate reporter process and SetUnhandledExceptionFilter in the main process many years ago. When porting the code to 64-bit it just didn't work, the unhandled exception filter was never invoked. VERY long story short, the (commercial, non-MS) C compiler I'm using emits wrong code in the 64-bit case. The function stack frames use a granularity of 8-bytes (like "lea rbp,[rsp+28h]"), but Windows' exception unwind data structures for SET_FPREG can only encode multiples of 10h
+<code>
+resulting in an off-by-8-bytes stack unwind issue and thus "missing" the uppermost exception filter. What a pain...Read moreI have written my own crash reporter using a separate reporter process and SetUnhandledExceptionFilter in the main process many years ago. When porting the code to 64-bit it just didn’t work, the unhandled exception filter was never invoked. VERY long story short, the (commercial, non-MS) C compiler I’m using emits wrong code in the 64-bit case. The function stack frames use a granularity of 8-bytes (like “lea rbp,[rsp+28h]”), but Windows’ exception unwind data structures for SET_FPREG can only encode multiples of 10h
+Unwind codes: 
+      0A: SET_FPREG, register=rbp, offset=0x20
+resulting in an off-by-8-bytes stack unwind issue and thus “missing” the uppermost exception filter. What a pain to find out and as the bug was determined a WONTFIX by the vendor I had to write a patch utility that fixes this problem post-build.
+Read less

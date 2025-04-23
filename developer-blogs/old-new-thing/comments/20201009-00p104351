@@ -1,0 +1,193 @@
+Andrew Dinh  October 15, 2020
+
+
+  0  Collapse this comment
+Copy link
+quite interesting
+
+
+
+
+
+Jonathan Barner  October 12, 2020
+
+
+  0  Collapse this comment
+Copy link
+At first glance, I thought of ICU = Intensive Care Unit, especially at times where counting available hospital beds are on the national news regularly.
+Took me a while to figure out that ICU = International Components for Unicode (http://site.icu-project.org), which I’ve never hear about before.
+
+
+
+
+
+Raph Levien  October 10, 2020
+
+
+  1  Collapse this comment
+Copy link
+Raymond, with all due respect, I think you're incorrect here. The Unicode standard (UAX #29) is quite clear on where grapheme cluster boundaries are in Hangul syllables, and there definitely no boundary between U+1100 (a jamo in the L category) and U+1161 (a jamo in the V category). Section 7.3 (1) of KS X 1026-1 confirms this explicitly. I've researched this a bit and think the most likely explanation is that Microsoft just misinterpreted the standard and shipped an implementation that has grapheme boundary (and text layout) logic in violation of both Unicode and KS X 1026-1.
+Now things get a...Read moreRaymond, with all due respect, I think you’re incorrect here. The Unicode standard (UAX #29) is quite clear on where grapheme cluster boundaries are in Hangul syllables, and there definitely no boundary between U+1100 (a jamo in the L category) and U+1161 (a jamo in the V category). Section 7.3 (1) of KS X 1026-1 confirms this explicitly. I’ve researched this a bit and think the most likely explanation is that Microsoft just misinterpreted the standard and shipped an implementation that has grapheme boundary (and text layout) logic in violation of both Unicode and KS X 1026-1.
+Now things get a lot trickier when we’re talking about properly supporting Old Hangul; Unicode and KS X 1026-1 disagree for the sequence U+AC00 U+11EB (가ᇫ); Unicode specifies that there is not a grapheme boundary here, but also acknowledges that according to KS X 1026-1 rules there is one. UAX 29 in its infinite wisdom and generosity allows implementations to “tailor” their behavior (ie it doesn’t nail down exact rules that everybody needs to follow) and specifically allows implementations that need to conform to KS X 1026-1 to do so.
+So if the issue was simply that MS placed an extra grapheme boundary on NFC encodings of syllables containing Old Hangul, I would be quite understanding. But that’s not what happened here. Rather, the MS implementation seems to be simply wrong.
+I could be wrong but I do have some relevant experience. Among other things, I wrote the grapheme boundary logic that’s been shipping since Android Lollipop, so questions of grapheme cluster boundary tailoring are near and dear to my heart.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+October 19, 2020
+
+
+  0  Collapse this comment
+Copy link
+Thanks, Ralph. I am not the subject matter expert here; I’m recapturing information I received from the people who implemented it. From what I can tell, KS X 1026-1 was released in 2008, but UAX 29 did not address Hangul breaking until version 18 (2011). It’s possible that KS X 1026-1 was incorrectly implemented.
+
+
+
+
+
+Akash Bagh  October 14, 2020
+
+
+  0  Collapse this comment
+Copy link
+Thanks a lot!
+
+
+
+
+
+Raymond Chen Author
+October 12, 2020
+
+
+  0  Collapse this comment
+Copy link
+Well, that’s the story I got from the globalization team. Maybe they got it wrong?
+
+
+
+
+
+Raph Levien  October 12, 2020
+
+
+  0  Collapse this comment
+Copy link
+I think so. I’m happy to continue this thread by email if you’re motivated to get to the bottom of it. It’s relevant to current work in Druid (Rust GUI toolkit) to use platform capabilities to do text layout (unlike browsers, which today all use HarfBuzz), and this is currently an area where DirectWrite is variant.
+
+
+
+
+Akash Bagh  October 10, 2020
+
+
+  0  Collapse this comment
+Copy link
+But what is the logic behind this? Why do some jamo required to behave differently?
+
+
+
+
+
+Raph Levien  October 11, 2020
+
+
+  2  Collapse this comment
+Copy link
+It boils down to coding efficiency. You can find a lot more detail in the History section of Hangul syllables on Wikipedia, but the simplified version is this. Modern Hangul has a relatively small number of jamo - 19 leading consonants, 21 vowels, and 27 (optional) trailing consonants. The simplest way to encode Hangul would be a code point for every jamo, which in UTF-8 would be 9 bytes for a typical LVT syllable. There are exactly 11,184 valid combinations of these, and, as of Unicode 2.0, these are encoded into the U+AC00..U+D7AF range, so 3 byte for each syllable.
+I...Read moreIt boils down to coding efficiency. You can find a lot more detail in the History section of Hangul syllables on Wikipedia, but the simplified version is this. Modern Hangul has a relatively small number of jamo – 19 leading consonants, 21 vowels, and 27 (optional) trailing consonants. The simplest way to encode Hangul would be a code point for every jamo, which in UTF-8 would be 9 bytes for a typical LVT syllable. There are exactly 11,184 valid combinations of these, and, as of Unicode 2.0, these are encoded into the U+AC00..U+D7AF range, so 3 byte for each syllable.
+I think there’s a secondary reason as well, which is the ability to render Hangul well in unsophisticated text layout engines. If your text consists only of precomposed syllables, you can just make a glyph for each such syllable, and render it even on the kind of simplistic text layout engines that were the norm in the mid-90s when this stuff was being hashed out, and you still see today when people do their own text layout (such as many GUI toolkits in Rust). To handle individual jamo, you either need sophisticated logic to choose appropriate variants (often varying in width and height) and place them so the syllable is visually balanced and pleasing, or you need to form ligatures. Real text layout engines can do that today, but as I say it’s (sadly) still not entirely universal.
+The syllable approach depends on the number of jamo being small, otherwise there’d be a combinatorial explosion. If you tried to do the same thing with all jamo encoded in Unicode, it would be around 315k possible syllables, which wouldn’t even fit into a single font (there’s a 64k limit on the number of glyphs in an OpenType font).
+So the current situation is that there are two ways to encode Hangul Syllables. The NFC encoding of Modern Hangul is efficient and easy for text layout engines, and it is also possible to encode syllables that contain Old Hangul as well. It’s just that those need more sophistication, and then Windows doesn’t render them correctly unless they happen to conform to KS X 1026-1 encoding rules.
+There’s more history here, some of which would actually help make Raymond’s original point. The original Unicode 1.0 had only 2530 syllables, which was inadequate. They made a massive incompatible change in 2.0, which they were able to do because nobody actually implemented the 1.0 version of Korean. Even so, in the language of RFC 2279, ‘The incident has been dubbed the “Korean mess”, and the relevant committees have pledged to never, ever again make such an incompatible change.’
+Hope that helps. Text layout is a fascinating subject, and every script has its own quirks and idiosyncrasies, many of which stem from historical evolution of standards through national standards bodies and into Unicode.
+Read less
+
+
+
+
+
+
+
+silversoul silversoul  October 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+Sorry but in short, it is not standard method in even Korea.
+Is my previous comment missing....?
+---edited---
+As a Korean, I agree johab method you mentioned is apparently a simpler way, but it is not standard, and never was an official single standard. it always was a 'de facto' for a brief time period(~90s) or an 'alternative' way after since.
+Korea submitted following standard to unicode.org:
+In addition, we must adhere to the following rules when representing in Johab Hangul syllable blocks.
+1) As same as in the rules of representation format of Hangul letters (see 5.1), two or more
+code positions...Read moreSorry but in short, it is not standard method in even Korea.
+Is my previous comment missing….?
+—edited—
+As a Korean, I agree johab method you mentioned is apparently a simpler way, but it is not standard, and never was an official single standard. it always was a ‘de facto’ for a brief time period(~90s) or an ‘alternative’ way after since.
+Korea submitted following standard to unicode.org:
+In addition, we must adhere to the following rules when representing in Johab Hangul syllable blocks.
+1) As same as in the rules of representation format of Hangul letters (see 5.1), two or more
+code positions of simple letters cannot be concatenated to represent a single complex letter.
+– an example. ㄱㄱ (U+1100 U+1100, incorrect) ⇒ ㄲ (U+1101, correct)
+2) A Wanseong syllable block cannot be recomposed with Johab Hangul letter(s) to represent
+another Hangul syllable block.
+– an example. 가ᇫ (U+AC00 U+11EB, incorrect) ⇒ (U+1101 U+1161 U+11EB, correct)
+3) A modern syllable block must be represented in Wanseong Hangul syllable block. It is
+forbidden to represent a modern syllable block in Johab Hangul syllable block.
+– an example. ㄱㅏ (U+1100 U+1161, incorrect) ⇒ 가 (U+AC00, correct)
+Korean government has following official guidelines for computer systems:
+http://m.korea.kr/archive/expDocView.do?docId=28072&group=/#expDoc
+KS X 1026-1
+정식 명칭은‘정보 교환용 한글 처리 지침’이며, 유니코드 한글 처리의 정규화에 대한 규격이다.
+유니코드를 이용하여 한글을 표기할 때, 한글 하나를 표기하는 데에 여러 가지 방법을 사용할 수 있다.
+실제로는 같은 글자인데도 글자를 표기하는 방법이 여러 가지라면 데이터를 검색하거나 비교할 때에
+문제가 발생할 수 있다.
+이에 따라 같은 글자를 표기하기 위한 방법을 단일화하여 정보처리 시에 문제가 발생하지 않도록 하고,
+표준화를 통해 시스템 간 효율적이고 올바른 데이터 교환을 이루도록 하기 위해 KS X 1026-1이 마련
+되었다. (2007년 12월)
+예를 들어, 한글 글자마디‘가’의 경우,
+U＋AC00 : 완성자‘가’
+U＋1100, U+1161 : 한글 자모‘ㄱ’과‘ㅏ’의 조합
+두 가지로 나타낼 수 있는데, KS X 1026-1에서는 U+AC00만 쓸 것을 제시하고 있다.
+(Between U＋AC00 and U＋1100 & U+1161,  KS X 1026-1 insists to use U+AC00 only.)
+Read less
+
+
+
+
+
+Flux  October 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+I once read a story about Apple inventing Firewire. The story said Apple was unwilling to be the first to adopt the standard that it had created.
+
+
+
+
+
+Elmar  October 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+Are you sure this isn’t a case of competing standards rather than ICU ignoring or following a mere de facto standard? If I look at UAX #29, which contains Unicode’s rules for grapheme clustering, it appears to state pretty clearly: “Do not break Hangul syllable sequences.“
+
+
+
+
+
+Joshua Hudson  October 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+Eight more years until I can manifest everything for UTF-8 character set and drop most of this LPWSTR headache. (Another first-mover penalty Windows devs still pay). https://docs.microsoft.com/en-us/windows/uwp/design/globalizing/use-utf8-code-page

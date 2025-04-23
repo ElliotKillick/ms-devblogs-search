@@ -1,0 +1,89 @@
+Em X  April 4, 2019
+
+
+  0  Collapse this comment
+Copy link
+Although the better way has been posted in newer updates, I suppose this is supposed to be:
+    var (result1, result2) =
+      await ThreadPoolHelper.RunTaskAsync(async () =>
+      {
+        var innerResult1 = Compute1(v);
+        var other = await ContactWebServiceAsync();
+        var innerResult2 = Compute2(innerResult1, other);
+        return (innerResult1, innerResult2);
+      });
+
+
+
+
+
+Daniel Sturm  March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+Is therea reason to not simply use Task.Run for the heavy connotations? (Or the ThreadPoolHelper class if this is some strange uwp limitation). Sure it’s marginally less efficient because we have to call ito to the threadpool twice instead of once, but it avoids the whole dispatcher callbacks nicely and creates straightforward code. And if the computation is really heavy the tiny overhead won’t matter.
+
+
+
+
+
+Raymond Chen Author
+March 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+As I noted, there are problems with this approach, most notably that getting the results back to the UI thread is particularly cumbersome.
+
+
+
+
+
+Daniel Sturm  March 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+Huh my phone really butchered the comment yesterday.
+What I personally would do in the given scenario would be something along these lines:
+<code>
+That would be a bit less efficient than the original implementation since we call out to the threadpool a bit more often than strictly necessary, but it strikes me as the most straightforward way to do this and the overhead is rather negligible.
+Read moreHuh my phone really butchered the comment yesterday.
+What I personally would do in the given scenario would be something along these lines:
+
+    // Get the control's value.
+    var v = SomeControl.Value;
+
+    // Do the computation.
+    var result1 = await Task.Run(() => Compute1(v));
+    var other = await ContactWebServiceAsync(); 
+    var result2 = await Task.Run(() => Compute2(result1, other));
+
+    // Provide an interim update.
+    TextBlock1.Text = result1;
+    TextBlock2.Text = result2;
+
+    // Back to more computations.
+    var extra = await GetExtraDataAsync();
+    var result3 = await Task.Run(() => Compute3(result1, result2, extra));
+
+    // Show final results.
+    TextBlock3.Text = result3;
+
+That would be a bit less efficient than the original implementation since we call out to the threadpool a bit more often than strictly necessary, but it strikes me as the most straightforward way to do this and the overhead is rather negligible.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+March 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+You’re constantly returning to the UI thread, so if the UI thread is busy, your code stalls a lot. And if the computation is 100 lines of code, this pattern gets quite tiresome. Some of those “await”s are inside conditional blocks; not sure how you would rework it to fit the pattern.

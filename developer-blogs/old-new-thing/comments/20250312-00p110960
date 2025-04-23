@@ -1,0 +1,44 @@
+Ian Boyd  March 12, 2025
+· Edited
+
+  1  Collapse this comment
+Copy link
+Many years [ago][1], you mentioned that (as an implementation detail) the various shell/COM memory allocators were unified. In other words:
+- CoTaskMemFree
+- SHFree
+- SHGetMalloc.Free
+- CoGetMalloc.Free
+are all the same thing behind the scenes.
+Do we know if that extends to **BSTR** and SysFreeString?
+I ask because Delphi has built-in language support for BSTR strings. In Delphi it a special type called **WideString**. The compiler calls SysAllocString and SysFreeString behind the scenes.
+And there are quite a few times you want to call a shell function that returns a string, but it is pointer to string, and it must be freed using **CoTaskMemFree**....Read moreMany years [ago][1], you mentioned that (as an implementation detail) the various shell/COM memory allocators were unified. In other words:
+– CoTaskMemFree
+– SHFree
+– SHGetMalloc.Free
+– CoGetMalloc.Free
+are all the same thing behind the scenes.
+Do we know if that extends to **BSTR** and SysFreeString?
+I ask because Delphi has built-in language support for BSTR strings. In Delphi it a special type called **WideString**. The compiler calls SysAllocString and SysFreeString behind the scenes.
+And there are quite a few times you want to call a shell function that returns a string, but it is pointer to string, and it must be freed using **CoTaskMemFree**.
+But if our interop from Delphi could change the type of the string parameter to WideString:
+– rather than PWideChar, and we free with CoTaskMemFree
+– we use the compiler type WideString, which will free it automagically with SysFreeString
+Is SysFreeString also a silent wrapper around CoTaskMemFree?
+  [1]: https://devblogs.microsoft.com/oldnewthing/20040705-00/?p=38573
+Read less
+
+
+
+
+
+
+
+Kalle Niemitalo  March 13, 2025
+
+
+  2  Collapse this comment
+Copy link
+SysFreeString is not just a trivial wrapper around CoTaskMemFree.
+* There is a BSTR cache; see the SetOaNoCache function.
+* BSTR can have a reference count that prevents SysFreeString from freeing it immediately; see the SysAddRefString function.
+* BSTR has a length stored at a negative offset, so the memory block that will have to be freed does not start at the address to which the BSTR points.

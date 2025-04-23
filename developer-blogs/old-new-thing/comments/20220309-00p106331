@@ -1,0 +1,156 @@
+Andreas Peitz  March 10, 2022
+
+
+  0  Collapse this comment
+Copy link
+Multiplications are a tricky thing and their behavior changed a lot over the last 2 decades. Today multiplications are super-cheap and often as fast as additions. It depends on the dependency chain of all operations and the number of available/free ALU sub-units that can perform multiply/add. There is also fused-add-multiply to consider. Today you thumb-count a multiplication as cost 1 if you have at least 2 other operations at the same time not dependent on the product.
+Back in the days, and still on the ARMv7 architecture for low-end micro-controllers, the story is different. Especially M0/M1 cortex, still in use...Read moreMultiplications are a tricky thing and their behavior changed a lot over the last 2 decades. Today multiplications are super-cheap and often as fast as additions. It depends on the dependency chain of all operations and the number of available/free ALU sub-units that can perform multiply/add. There is also fused-add-multiply to consider. Today you thumb-count a multiplication as cost 1 if you have at least 2 other operations at the same time not dependent on the product.
+Back in the days, and still on the ARMv7 architecture for low-end micro-controllers, the story is different. Especially M0/M1 cortex, still in use billions of times everywhere, has a very slow multiplication unit of 22-ticks per operation. Removing multiplications makes a huge difference there. We also have a lot of “optimized” code from the 90s in the FFT/DCT (Fourier Transform) and other area that used complex matrix multiplications and tried to reduce multiplications by additions. Back then, it was faster, today they are slower. A lot slower as 1 multiplication was replaced by 4-5 additions/shift.
+Today, I would not remove multiplications anymore. I would get rid of every (non-power-2) division, though. Division are crawling slow. And there lies one of the biggest problem: People still use way too many outdated optimization algorithms from “old times” and port those to new architectures. And not so rarely, the trivial algorithm beats the hand-optimized algorithm by a long short. Register count has changed, register size has changed, cost of “stack/temp” variables has changed drastically. Multiple ALU units, data transfer between different sub-ALU units (float/integer)… all those things that compilers know about and act upon, versus a programmer that forces a hand-optimized algorithm for a decade-old architecture onto a modern architecture.
+I see in the upper algorithm 17 operations all occupying the same ALU shift-unit. As those are distributed over 2 paths, it’s 9 units of cost. The original has 6, again over 2 paths. Shift and Multiply are different, so the shift (division by 256) is fully hidden by the multiply. Count multiply as cost 2, makes it cost 6 over 2 paths makes cost 3. Overall, thumb-rule, this multiply should be around 3 times faster. You say factor 2.2 — close enough.
+Read less
+
+
+
+
+
+
+
+Aaron Giles  March 9, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+You can use this technique via SIMD in a register as well, since you know what you're subtracting is less than the original value, so you don't have to worry about underflow.
+Further, what you're subtracting can be decomposed as follows:
+Factor 1 = 8/256, or 1/32
+Factor 2 = 16/256, or 1/16
+Factor 3 = 24/256, or 1/16 + 1/32
+You can compute these efficiently via SIMD in a register:
+1/16 is just (pixel >> 4) & 0x0F0F0F
+1/32 is just (pixel >> 5) & 0x070707
+And then fold the masks above into your masking solution:
+<code>
+Read moreYou can use this technique via SIMD in a register as well, since you know what you’re subtracting is less than the original value, so you don’t have to worry about underflow.
+Further, what you’re subtracting can be decomposed as follows:
+Factor 1 = 8/256, or 1/32
+Factor 2 = 16/256, or 1/16
+Factor 3 = 24/256, or 1/16 + 1/32
+You can compute these efficiently via SIMD in a register:
+1/16 is just (pixel >> 4) & 0x0F0F0F
+1/32 is just (pixel >> 5) & 0x070707
+And then fold the masks above into your masking solution:
+void darken(Pixel* first, Pixel* last, int darkness)
+{
+  int factor = darkness / 8;
+  uint32_t mask16 = (factor & 2) ? 0x000F0F0F : 0;
+  uint32_t mask32 = (factor & 1) ? 0x00070707 : 0;
+  for (; first < last; ++first) {
+    uint32_t v = first->v;
+    v = v - ((v >> 4) & mask16) - ((v >> 5) & mask32);
+    first->v = v;
+  }
+}
+Read less
+
+
+
+
+
+
+
+Florian Philipp  March 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+One thing I’m wondering about: Shouldn’t lightness be an unsigned integer? We originally defined darkness as range [0, 256]. So lightness is unsigned, too. I’m asking specifically because the current code treats the division by 256 as a signed division which requires more instructions than an unsigned division.
+
+
+
+
+
+Flux  March 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+the CPU has an early-out for small factors
+Early-out?
+
+
+
+
+
+Jeff Howe  March 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+Not a CPU expert by any means, but as best I can tell via the context and a simple web search, CPUs can execute a multiplication in all of its fullness (multiply/carry/add/lather/rinse/repeat), but in some cases, with small factors, they stop when the multiplication unit knows that the multiplication is complete and exit then, leading to shorter instruction execution time. Because multiplications can then have different execution times depending on inputs, this can make scheduling them trickier for the scheduler. I found one description of a PowerPC CPU that references "early-out" in the context of multiplications, with a way to...Read moreNot a CPU expert by any means, but as best I can tell via the context and a simple web search, CPUs can execute a multiplication in all of its fullness (multiply/carry/add/lather/rinse/repeat), but in some cases, with small factors, they stop when the multiplication unit knows that the multiplication is complete and exit then, leading to shorter instruction execution time. Because multiplications can then have different execution times depending on inputs, this can make scheduling them trickier for the scheduler. I found one description of a PowerPC CPU that references “early-out” in the context of multiplications, with a way to disable early-out in what’s called “deterministic” mode (i.e. the multiplication always takes n cycles, and no less).
+Read less
+
+
+
+
+
+
+
+Florian Philipp  March 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+An early-out would make multiplications possible attack vectors for timing attacks, similar to divisions. That led me to some information on the issue. Apparently, this kind of stuff is uncommon in desktop and laptop CPUs and definitely not the source of issues in this blog post. Hear is a list of susceptible CPUs
+
+
+
+
+
+MGetz  March 9, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Because the decoder and the actual EUs are split the decoders can use the fact they can see ahead to make it happen. This is how you have things like "macro op fusion" (not linking as my last post with links is still awaiting moderation) where the CPU just does things more efficiently for it. It can also split instructions internally too. But a classic example of fusion is  (or most flag modification instructions) immediately followed by a  instruction. The CPU will just treat them both as a single instruction. RISC CPUs are generally much more aggressive about...Read moreBecause the decoder and the actual EUs are split the decoders can use the fact they can see ahead to make it happen. This is how you have things like “macro op fusion” (not linking as my last post with links is still awaiting moderation) where the CPU just does things more efficiently for it. It can also split instructions internally too. But a classic example of fusion is cmp (or most flag modification instructions) immediately followed by a jxx instruction. The CPU will just treat them both as a single instruction. RISC CPUs are generally much more aggressive about it because they have much more granular instructions. That said they are just an implementation detail and not guaranteed. But compiler writers still like to know because they can produce faster code.
+Read less
+
+
+
+
+
+
+
+Flux  March 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+Thank you both.
+So, if I understand correctly, this early-out thing works pretty much like when I was 13 years old and conversed with 7- or 8-years-old kids on the school bus. Impressed by my seniority, they’d ask me to mentally add or multiply large numbers for them. Unbeknownst to them, I had an easy time fulfilling their requests because their so-called “large” numbers had a lot of zero in front of them. Early-out for me. I’d have been in serious trouble if they had given me 36 and 7.
+
+
+
+
+Florian Philipp  March 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+Yeah, that sounds unlikely to me, too. Integer multiply should be a fixed delay + fixed-throughput operation on any modern CPU. My guess is that the optimized version has significantly more instructions. Enough to bottleneck on retired instructions per cycle. Godbolt shows 24 vs 33 instructions, depending on how you count. That's at least two extra clock cycles. And even the original version probably doesn't bottleneck in the multiplier if we assume 6 instructions per cycle.
+Godbolt
+Read moreYeah, that sounds unlikely to me, too. Integer multiply should be a fixed delay + fixed-throughput operation on any modern CPU. My guess is that the optimized version has significantly more instructions. Enough to bottleneck on retired instructions per cycle. Godbolt shows 24 vs 33 instructions, depending on how you count. That’s at least two extra clock cycles. And even the original version probably doesn’t bottleneck in the multiplier if we assume 6 instructions per cycle.
+Godbolt
+Read less
+
+
+
+
+
+
+aybe  March 9, 2022
+
+
+  0  Collapse this comment
+Copy link
+Citing you: “Fastest code is code that doesn’t run.”, lesson learned!

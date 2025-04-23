@@ -1,0 +1,78 @@
+Kevin Eshbach  August 7, 2023
+
+
+  0  Collapse this comment
+Copy link
+RogueWave had a string implementation that did copy on write too, but this was before the STL existed and if memory serves me correctly before C++ was initially standardized.
+
+
+
+
+
+Barrie Green  August 4, 2023
+
+
+  1  Collapse this comment
+Copy link
+Nothing to say of any value, other than, I’m enjoying these STL blogs – Thanks!
+
+
+
+
+
+Graham Freckleton  August 4, 2023
+
+
+  0  Collapse this comment
+Copy link
+In the early days of Visual C++ 6.0 (~1999-2001) we were using STL std::string pretty much everywhere. This implementation used what I called 'shared strings' but reference counting strings is probably the better term of art.
+We had a multi-threaded (free threaded) COM server that would rarely but catastrophically crash. Looking at the stack traces it became apparent that reference counting strings were not thread safe.
+Faced with putting locks around all string activity (!!), we instead forced instantiation of our own (overriding) string class, passing a template parameter which switched off reference counting strings (I believe it was the buffer size...Read moreIn the early days of Visual C++ 6.0 (~1999-2001) we were using STL std::string pretty much everywhere. This implementation used what I called ‘shared strings’ but reference counting strings is probably the better term of art.
+We had a multi-threaded (free threaded) COM server that would rarely but catastrophically crash. Looking at the stack traces it became apparent that reference counting strings were not thread safe.
+Faced with putting locks around all string activity (!!), we instead forced instantiation of our own (overriding) string class, passing a template parameter which switched off reference counting strings (I believe it was the buffer size by using a zero). Fortunately that had been designed in. Once that was done no more multi-threaded COM server crashes.
+There was also a fun STL std::map issue but I will wait for Raymond to put that up.
+Read less
+
+
+
+
+
+
+
+Shy Shalom  August 3, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+Fun fact: before C++11 `.data()` did not have to ensure what it’s returning is null-terminated, only `.c_str()` did.
+So a potential optimization could have been to only require the extra byte for the null-term to be there (or be 0) only when you call `.c_str()`
+This probably crashed a spaceship or two before they decided it was way too error prone.
+Another thing that killed the gcc ref-count implementation is that C++11 relaxed the requirement that the caller should not alter the characters pointed by `.data()` and `.c_str()`
+
+
+
+
+
+Martin “KeyJ” Fiedler  August 3, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+There seems to be one caveat with the (otherwise very cool!) trick that the Clang approach pulls, at least when implemented as described in the article: when overlaying the two structures in memory,  only coincides with bit 0 of  on little-endian systems. On big-endian systems,  would end up at bit 56 (on 64-bit BE systems) or bit 24 (on 32-bit BE systems) of . That might be part of Raymond's simplifications to hide the nasty details, but I think it's nevertheless noteworthy, just in case anyone starts copying the concept from this article ...
+For the curious, libc++...Read moreThere seems to be one caveat with the (otherwise very cool!) trick that the Clang approach pulls, at least when implemented as described in the article: when overlaying the two structures in memory, basic_string_small::is_small only coincides with bit 0 of basic_string_large::capacity on little-endian systems. On big-endian systems, is_small would end up at bit 56 (on 64-bit BE systems) or bit 24 (on 32-bit BE systems) of capacity. That might be part of Raymond’s simplifications to hide the nasty details, but I think it’s nevertheless noteworthy, just in case anyone starts copying the concept from this article …
+For the curious, libc++ solves this issue by using the most-significant bit (MSB) of capacity as the indicator bit on big-endian systems, and the least-significant bit (LSB) on little-endian systems, just as Raymond described. It also has an “alternate string layout ABI” mode where it instead puts capacity at the end of the structures on BE systems instead and uses the LSB; no idea under which circumstances that approach is used.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+August 3, 2023
+
+
+  0  Collapse this comment
+Copy link
+Yes, it was a simplification. I’ll call it out.

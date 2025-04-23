@@ -1,0 +1,154 @@
+Igor Levicki  March 25, 2025
+
+
+  0  Collapse this comment
+Copy link
+Shouldn't this be:
+<code>
+I know that error handling is usually left out as an exercise for the readers, but if you are already giving an example on what to use as a replacement for a critical section, I believe it would be prudent to add it or we are going to be seeing it as a verbatim suggestion in Copilot*.
+@LB I don't see how an enum would prevent this kind of error. You can still return a wrong value even if said value is strongly typed.
+* - replace with a code hallucinating LLM of your choice
+Read moreShouldn’t this be:
+SRWLOCK g_srwlock = SRWLOCK_INIT;
+
+VOID DoWithTraceLoggingHandle(TRACELOGGINGCALLBACK Callback, PVOID Context)
+{
+AcquireSRWLockExclusive(&g_srwlock);
+HRESULT hr = TraceLoggingRegister(g_myProvider);
+__try { // Generally a good practice to wrap callbacks (never trust user provided code to not crash)
+if (SUCCEEDED(hr)) {
+(*Callback)(g_myProvider, Context);
+TraceLoggingUnregister(g_myProvider);
+}
+} __finally { // If crap hits the fan at least we won't hold a lock
+ReleaseSRWLockExclusive(&g_srwlock);
+}
+}
+I know that error handling is usually left out as an exercise for the readers, but if you are already giving an example on what to use as a replacement for a critical section, I believe it would be prudent to add it or we are going to be seeing it as a verbatim suggestion in Copilot*.
+@LB I don’t see how an enum would prevent this kind of error. You can still return a wrong value even if said value is strongly typed.
+* – replace with a code hallucinating LLM of your choice
+Read less
+
+
+
+
+
+
+
+LB  March 26, 2025
+
+
+  0  Collapse this comment
+Copy link
+A strongly typed enum prevents you from returning `STATUS_SUCCESS` instead of the enum value for success, because it would not be implicitly convertible. It’s still on you to pick the correct enum value, but that’s much less error prone than picking a constant from the wrong implicit enumeration pool like this code did.
+
+
+
+
+
+Igor Levicki  March 26, 2025
+
+
+  0  Collapse this comment
+Copy link
+The direct cause of error is that they didn't RTFM but instead assumed what they need to return -- one of many Win32 success codes (STATUS_SUCCESS, ERROR_SUCCESS, S_OK, ...).
+This is literally a case where you have two valid return values and using any enum for that let alone strongly typed one is a total overkill which adds pointless maintenance and cognitive overhead for a case where BOOL would work just fine and make it more obvious what to return just from declaration even without reading the documentation.
+I am all for strongly typed enums, but in places where they make sense.
+Read moreThe direct cause of error is that they didn’t RTFM but instead assumed what they need to return — one of many Win32 success codes (STATUS_SUCCESS, ERROR_SUCCESS, S_OK, …).
+This is literally a case where you have two valid return values and using any enum for that let alone strongly typed one is a total overkill which adds pointless maintenance and cognitive overhead for a case where BOOL would work just fine and make it more obvious what to return just from declaration even without reading the documentation.
+I am all for strongly typed enums, but in places where they make sense.
+Read less
+
+
+
+
+
+
+Raymond Chen Author
+March 25, 2025
+
+
+  0  Collapse this comment
+Copy link
+The callbacks are provided by the same component, and if it crashes, we want the process to crash rather than pretend everything is fine.
+
+
+
+
+Dimiter Stanev  March 23, 2025
+
+
+  2  Collapse this comment
+Copy link
+Apart from that, I have an issue wth the RunOnce code – there is no cleanup. What if this code gets later moved to a .dll, and the .dll gets unloaded – you’ll unload data section that has the critical section still active.
+All in all, people should use more AppVerif to catch this.
+
+
+
+
+
+Shawn Van Ness  March 22, 2025
+
+
+  1  Collapse this comment
+Copy link
+Do we need to init the SRWLOCK?  or is zero-init fine
+
+
+
+
+
+Me Gusta  March 23, 2025
+
+
+  2  Collapse this comment
+Copy link
+Zero init is fine. SRWLOCK_INIT is defined as zero init.
+In winnt.h, we have:
+#define RTL_SRWLOCK_INIT {0}
+In synchapi.h, we have:
+#define SRWLOCK_INIT RTL_SRWLOCK_INIT
+This is explicitly showing that the lock is being properly initialised in code though.
+
+
+
+
+
+Swap Swap  March 22, 2025
+
+
+  2  Collapse this comment
+Copy link
+IMHO, we should add SRWLOCK_INIT here
+
+
+
+
+
+Raymond Chen Author
+March 23, 2025
+
+
+  2  Collapse this comment
+Copy link
+Agreed. Retroactively added.
+
+
+
+LB  March 21, 2025
+
+
+  2  Collapse this comment
+Copy link
+Another victory for strongly typed enums. I shiver at the sight of raw primitive return types with assumed limited meanings.
+
+
+
+
+
+Tom Lint  March 26, 2025
+
+
+  1  Collapse this comment
+Copy link
+Even better would be to have the return type be BOOL, to clearly indicate a boolean return value is expected. Microsoft dropped the ball on this API by not using the correct return type.

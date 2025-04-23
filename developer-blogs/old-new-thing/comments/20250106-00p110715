@@ -1,0 +1,85 @@
+Joe Beans  January 16, 2025
+
+
+  0  Collapse this comment
+Copy link
+What Raymond described is what we all do, but for argument’s sake it assumes we know exactly when the change event will be fired and can trust that it will never differ. Strictly speaking, the event could happen out-of-order. That’s a big mess when things are done async.
+By contrast, WASAPI uses a caller-supplied GUID context to identify the change source when setting sound volumes and whatnot.
+
+
+
+
+
+alan robinson  January 7, 2025
+
+
+  0  Collapse this comment
+Copy link
+IMHO this is a design flaw - some UI libraries pass a Boolean indicating if the change notification was due to user interaction or not, which I *think* the library should be able to detect reliably. Of course nothing beats having your own private flag as in the code above but it's cumbersome given how often-needed it is.  Most of the time I run into this when initializing a UI object, which, at least IMHO, should not fire a change event at all.  That might be harder to autodetect, though a simple library state bit "is_initializing=true"  ought...Read moreIMHO this is a design flaw – some UI libraries pass a Boolean indicating if the change notification was due to user interaction or not, which I *think* the library should be able to detect reliably. Of course nothing beats having your own private flag as in the code above but it’s cumbersome given how often-needed it is.  Most of the time I run into this when initializing a UI object, which, at least IMHO, should not fire a change event at all.  That might be harder to autodetect, though a simple library state bit “is_initializing=true”  ought to do it.
+Read less
+
+
+
+
+
+
+
+LB  January 6, 2025
+
+
+  0  Collapse this comment
+Copy link
+I’d probably use a simple RAII wrapper or gsl::finally for this so that the flag doesn’t get stuck on in the case of an exception
+
+
+
+
+
+Tim Dean Johnson  January 6, 2025
+
+
+  1  Collapse this comment
+Copy link
+I don’t think setting a boolean is implicitly atomic in C++, so I’m guessing you need to be mindful of which thread is doing what.
+I’m pretty used to this pattern when dealing with UserForms in VBA. It’s pretty much required for forms of medium complexity.
+
+
+
+
+
+Damir Valiulin  January 7, 2025
+
+
+  0  Collapse this comment
+Copy link
+A simple boolean flag might not be sufficient when you need to update or respond to an update in cascading fashion. You may end in loop. A better flag would be a counter that you increment and decrement:
+int m_UISetProgrammatically = 0;
+
+void SetAuthorProgrammatically(PCWSTR author)
+{
+    m_UISetProgrammatically++;
+    SetWindowText(m_authorText, author);
+    m_UISetProgrammatically--;
+}
+
+void OnAuthorChanged()
+{
+    if (m_UISetProgrammatically > 0)
+    {
+        // Ignore programmatic setting
+        return;
+    }
+
+    [ update the author in the table ]
+}
+
+
+
+
+
+Damir Valiulin  January 7, 2025
+
+
+  0  Collapse this comment
+Copy link
+Only UI thread should modify UI state. So the flag should be stored and updated on the UI thread as well. If you want to do it from multiple threads, then you’d need a bit more complicated setup.

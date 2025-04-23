@@ -1,0 +1,47 @@
+紅樓鍮  August 19, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+It's unfortunate that  costs an atomic load, which probably inhibits optimizations such as constant propagation as well. In fact, C++ Reference notes on its page on  that
+Common use cases include
+Furthermore, comparison with  is generally useless since if you find yourself tempted to do this, what you actually want to do is probably somehow "turn the  into a " in a thread-safe manner, which, in the presence of possible concurrent  promotions, cannot be accomplished using the current interface of . I think the 2 common use cases of  should therefore be better served by
+<code>
+Read moreIt’s unfortunate that use_count() costs an atomic load, which probably inhibits optimizations such as constant propagation as well. In fact, C++ Reference notes on its page on unique_ptr::use_count that
+
+Common use cases include
+
+comparison with 0. …
+comparison with 1. … Furthermore, comparison with 1 is generally useless since if you find yourself tempted to do this, what you actually want to do is probably somehow “turn the shared_ptr into a unique_ptr” in a thread-safe manner, which, in the presence of possible concurrent weak_ptr promotions, cannot be accomplished using the current interface of shared_ptr. I think the 2 common use cases of use_count() should therefore be better served by
+
+// A deleter that points to a control block used by the `shared_ptr` facility.
+// When called, It ignores the argument pointer
+// and makes the control block delete its managed object.
+class shared_ptr_deleter;
+
+template <typename T>
+class shared_ptr {
+  // Returns `true` if the `shared_ptr` manages an object.
+  constexpr bool is_owning() const noexcept;
+
+  // Acquire the control block on condition that there are no other
+  // `unique_ptr`s currently managing the same object.
+  // If the condition is met, the reference count is decremented to 0
+  // but the object is not deleted, and the stored pointer and
+  // the control block pointer are used to construct the returned
+  // `unique_ptr<T, shared_ptr_deleter>`.
+  // If the condition is not met, both the returned `unique_ptr`
+  // and its deleter are null.
+  // The behavior of calling this member function on a
+  // non-owning `shared_ptr` is unspecified.
+  unique_ptr<T, shared_ptr_deleter>
+  try_into_unique_ptr() && noexcept;
+
+  // Similar to `try_into_unique_ptr`, but blocks until its condition is met.
+  unique_ptr<T, shared_ptr_deleter>
+  into_unique_ptr(/* timeout parameters... */) && noexcept;
+
+  /* ... */
+};
+
+Read less

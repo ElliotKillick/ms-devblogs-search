@@ -1,0 +1,149 @@
+Gerald Squelart  June 4, 2024
+
+
+  0  Collapse this comment
+Copy link
+I thought overloading `namespace std` was already UB? (With some exceptions, of course there are exceptions!) https://en.cppreference.com/w/cpp/language/extending_std
+And in fact, I’ve discovered that recent Clang versions actually ignore user-provided `std::move` overloads!
+So based on that, compilers should be allowed to special-case `std::move`… But then in the case of `return std::move(name)`, this would actually change the behavior (probably to what the user actually intended, but the compiler couldn’t be certain), so maybe *that* is not allowed when optimizing?
+
+
+
+
+
+Raymond Chen Author
+June 11, 2024
+
+
+  1  Collapse this comment
+Copy link
+From that linked page: “It is allowed to add template specializations for any standard library function template to the namespace std only if the declaration depends on at least one program-defined type and the specialization satisfies all requirements for the original template, except where such specializations are prohibited.” So you can specialize std::move of your custom type, provided it returns an rvalue reference to its parameter. But it appears that this permission was rescinded in C++20.
+
+
+
+
+Adam Jensen  June 3, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+Hmm now that we have [[msvc::intrinsic]], can compiler optimize this?
+
+
+
+
+
+Faheem Sarwar  June 4, 2024
+
+
+  0  Collapse this comment
+Copy link
+Now that we have [[msvc::intrinsic]], can the compiler optimize this?
+
+
+
+
+紅樓鍮  June 3, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+Random thoughts: because
+<code>
+is valid in C++ (that is,  is already in scope in its own initializer), a constructor of a class type must not assume the  pointer is unaliased; e. g. in
+<code>
+writing of  to  must not be reordered after the call to . Here we can see if the reorder happened, the lambda would access  before it gets initialized.
+Similarly, an NRVO function must not assume its return slot is unaliased:
+<code>
+(I zero-initialize  so that the first  doesn't touch uninitialized memory.)  must construct its return value exactly...Read moreRandom thoughts: because
+int x = f(&x);
+is valid in C++ (that is, x is already in scope in its own initializer), a constructor of a class type must not assume the this pointer is unaliased; e. g. in
+struct S {
+  int a;
+  template <typename F>
+  S(F f) : a(42) { f(); }
+};
+
+void test() {
+  S s([&] { println("{}", s.a); });
+}
+writing of 42 to a must not be reordered after the call to f. Here we can see if the reorder happened, the lambda would access s.a before it gets initialized.
+Similarly, an NRVO function must not assume its return slot is unaliased:
+template <typename F, typename G>
+Huge make_huge(F f, G g) {
+  f();
+  Huge result(some_args...); // NRVO
+  g();
+  return result;
+}
+
+void test() {
+  alignas(Huge) std::byte
+      storage[sizeof(Huge)]{};
+  new(storage) Huge(
+      [&] { inspect_bytes(storage); },
+      [&] { inspect_bytes(storage); });
+}
+(I zero-initialize storage so that the first inspect_bytes doesn’t touch uninitialized memory.) make_huge must construct its return value exactly in between f() and g(), since f() and g() can and will observe memory writes to the return slot that is result. (I’m not saying that we don’t want this specific behavior; read on.)
+And now we get to the punchline: if we change make_huge to
+template <typename F, typename G>
+Huge make_huge(F f, G g) {
+  f();
+  Huge local(some_args...);
+  g();
+  return std::move(local); // !!!
+}
+make_huge now must construct its return value exactly after g()! Because the initialization of the return value is now performed in the return statement after g(), and the compiler cannot reorder it above g() for the same reason why it couldn’t move the initialization around in the previous example. But local‘s constructor has to be called before g() (unless the compiler knows the constructor is pure, in which case it can reorder it at will), and since the constructor must not be called on the return slot (it must not be touched before g() returns), the only way to call the constructor is call it on a Huge chunk of locally allocated stack memory.
+And there you have it: unless we change the abstract machine semantics, not just NRVO, but any form of RVO is outright made impossible by the fact that C++ doesn’t restrict aliasing of under-construction objects sufficiently.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+June 3, 2024
+
+
+  0  Collapse this comment
+Copy link
+The standard already solved this problem. It simply says that NRVO is allowed, without any requirement that it preserve observable behavior.
+
+
+
+
+
+紅樓鍮  June 3, 2024
+
+
+  0  Collapse this comment
+Copy link
+Do you think more forms of RVO can be made possible by making it undefined behavior to alias an under-construction object from outside its constructor? And if so, does it break enough code to make it problematic in practice?
+
+
+
+
+
+Kevin Norris  June 4, 2024
+
+
+  0  Collapse this comment
+Copy link
+Any alias, of any partially constructed object? No, there’s no way you can do that without breaking all sorts of things. Any function call from the constructor, which passes the this pointer or a pointer/reference to any field as an argument, would invoke UB, and that’s far too wide a net. You would break logging, object registration, probably some kinds of caching/interning, possibly even some kinds of dependency injection, and presumably a whole pile of other stuff.
+
+
+
+
+
+紅樓鍮  June 4, 2024
+
+
+  0  Collapse this comment
+Copy link
+My description was inaccurate; I meant changing the constructor's  pointer to something similar to Rust's exclusive references () or C's  pointers, which can be used to derive child pointers but cannot be aliased by pointers that are not transitively derived from it.
+Notwithstanding that, I've realized adding the rule above is not sufficient to enable RVO because logging, object registration, etc. can be in cahoots with  and smuggle the pointer to somewhere  can access, which will again enable  to observe writes to the return slot.
+Read moreMy description was inaccurate; I meant changing the constructor’s this pointer to something similar to Rust’s exclusive references (&mut) or C’s restrict pointers, which can be used to derive child pointers but cannot be aliased by pointers that are not transitively derived from it.
+Notwithstanding that, I’ve realized adding the rule above is not sufficient to enable RVO because logging, object registration, etc. can be in cahoots with g() and smuggle the pointer to somewhere g() can access, which will again enable g() to observe writes to the return slot.
+Read less

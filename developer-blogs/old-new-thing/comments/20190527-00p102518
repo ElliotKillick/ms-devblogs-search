@@ -1,0 +1,195 @@
+James Touton  May 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+You absolutely can do this recursive template stuff with function templates, it's just harder because you can't partially specialize function templates.  However:
+return std::tuple_cat(first, read_tuple<Rest>(packet));This part fails mainly because Rest is not expanded; it's missing a trailing ellipsis.  Similarly, in AddHandler, the call to read_tuple is missing a template argument list.  It should be:
+auto args = read_tuple<Args...>(packet);You have another problem in that the zero-argument overload of read_tuple is not a specialization of a template, which means it can't be invoked with angle brackets.  This can be dealt with, but partial specialization via a class template is...Read moreYou absolutely can do this recursive template stuff with function templates, it’s just harder because you can’t partially specialize function templates.  However:
+return std::tuple_cat(first, read_tuple<Rest>(packet));This part fails mainly because Rest is not expanded; it’s missing a trailing ellipsis.  Similarly, in AddHandler, the call to read_tuple is missing a template argument list.  It should be:
+auto args = read_tuple<Args…>(packet);You have another problem in that the zero-argument overload of read_tuple is not a specialization of a template, which means it can’t be invoked with angle brackets.  This can be dealt with, but partial specialization via a class template is more straightforward.
+All that said, I think there’s still a piece missing to solve the problem.  Presumably, each command has a particular binary format; that format is tied to the command id, not the handler.  That is, I would like to get a compile-time failure if I try to pass a handler that is not appropriate to the command.  You can set this up in a generic fashion by changing the command id from a run-time function argument to a compile-time template argument.  From there, you can set up a trait that maps the command id to a handler type:
+template <uint32_t command> struct handler_type;
+template <uint32_t command> using handler_type_t = typename handler_type::type;
+template <> struct handler_type<0> { using type = void (int32_t, int32_t); };
+// others
+AddHandler becomes:
+template <uint32_t command> void AddHandler(handler_type_t<command>* func);
+or
+template <uint32_t command> void AddHandler(std::function<handler_type_t<command>> func);
+Users can supply their own mappings by specializing handler_type for their needs; if you want to allow that, then both the dispatcher class and the trait should be specialized on a tag type that is unique to the consumer.  From there, the rest of this blog post kicks in to handle the actual dispatch.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+May 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+Sorry I didn’t make it clear. The idea is that this class is a generic “packet deserializer” class that doesn’t know the command IDs. (After all, if it did know, then we wouldn’t have needed to do all of this in the first place. We could just have hard-coded all the legal command signatures.) There’s presumably a corresponding “packet serializer” class, and clients who want to communicate with each other would set up a “packet serializer” on one side and a “packet deserializer” on the other side, using a set of commands specific to their usage case.
+
+
+
+
+
+James Touton  May 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+Ugh; my reply above looks like a hideous wall of text.  Thanks for taking the time to read through that!  Any chance of (perhaps limited) markdown support coming to blog comments?  It would be nice if replies to a coding blog could actually have readable code…
+Re: generic deserializing, that’s why I brought up the idea of allowing the client code to specialize the trait to provide (and enforce) their own mappings.
+
+
+
+Pierre Baillargeon  May 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+I t seems to me that adding a level of indirection by providing a templated argument reader lambda for each command that takes as the first parameter the lambda to call to handle the command result in multiple benefits:
+1. The param reader enforce the correct type to be read. Important because there are multipl eimplicit conversion, so a slightly mistyped command handler lambda might successfully be passed and yet read slightly incorrect data from the stream.
+2. The code is much clearer and simpler for mere mortal.
+3. A clear separation of param reading and command handling.
+The AddHandler()...Read moreI t seems to me that adding a level of indirection by providing a templated argument reader lambda for each command that takes as the first parameter the lambda to call to handle the command result in multiple benefits:
+1. The param reader enforce the correct type to be read. Important because there are multipl eimplicit conversion, so a slightly mistyped command handler lambda might successfully be passed and yet read slightly incorrect data from the stream.
+2. The code is much clearer and simpler for mere mortal.
+3. A clear separation of param reading and command handling.
+The AddHandler() function becomes templated to take these intermediary param reading lambdas.
+Read less
+
+
+
+
+
+
+
+Henry Skoglund  May 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+“All problems in computer science can be solved by another level of indirection” quote from https://en.wikipedia.org/wiki/David_Wheeler_(computer_scientist)
+
+
+
+
+George Gonzalez  May 28, 2019
+
+
+  0  Collapse this comment
+Copy link
+That's swell,, but it reminds me of my early programming days, when I would try to write a text editor in VMS command language.  Or a screen-oriented editor in TECO.  Or egads, autoconf in bash.   They're all DOABLE, but in no sense understandable or maintainable.  Please think of the poor intern that will be asked to add a new command handler.  Hooray for being able to craft such a thing, but booo if you intend it to be used in production code and maintained by anyone with an IQ under 145.  Like, most of us.
+Read moreThat’s swell,, but it reminds me of my early programming days, when I would try to write a text editor in VMS command language.  Or a screen-oriented editor in TECO.  Or egads, autoconf in bash.   They’re all DOABLE, but in no sense understandable or maintainable.  Please think of the poor intern that will be asked to add a new command handler.  Hooray for being able to craft such a thing, but booo if you intend it to be used in production code and maintained by anyone with an IQ under 145.  Like, most of us.
+Read less
+
+
+
+
+
+
+
+Henry Skoglund  May 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+Hi, one way to get around that pesky evaluation order/recursion workarund, is to let those Read<…> helper template functions not return the read data from the packet, but instead return a lambda, which reads the data when called. And then construct the tuple from the lambdas (not from any data). The lambdas can then be invoked (to get the data from the packet) either in the AddHandler’s lambda or even in the handler functions themselves.
+
+
+
+
+
+Daniel Grunwald  May 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+In C++17, you can use class template argument deduction to avoid `std::make_tuple` and instead use braced initialization for `std::tuple`:
+template <typename... Args>
+void AddHandler(uint32_t command, void(*func)(Args...))
+{
+  commandMap.emplace(command, [func](Packet& packet) {
+    std::tuple args { Read<Args>(packet)... };
+    std::apply(func, args);
+  };
+}
+Unlike function call syntax, the direct-list-initialization syntax guarantees left-to-right evaluation; so this way you can side-step the whole need for recursive templates. At least according to the C++ standard.
+Unfortunately in the real world, some compilers haven't gotten the memo that it is the call syntax, not the...Read moreIn C++17, you can use class template argument deduction to avoid `std::make_tuple` and instead use braced initialization for `std::tuple`:
+template <typename… Args>
+void AddHandler(uint32_t command, void(*func)(Args…))
+{
+  commandMap.emplace(command, [func](Packet& packet) {
+    std::tuple args { Read<Args>(packet)… };
+    std::apply(func, args);
+  };
+}
+Unlike function call syntax, the direct-list-initialization syntax guarantees left-to-right evaluation; so this way you can side-step the whole need for recursive templates. At least according to the C++ standard.
+Unfortunately in the real world, some compilers haven’t gotten the memo that it is the call syntax, not the call semantics (constructor call or aggregate initialization) that should matter for the evaluation order guarantee.
+This stackoverflow question indicates there were compiler bugs in both GCC and MSVC as of 2016. I don’t know if these problems have been fixed since.
+Read less
+
+
+
+
+
+
+
+Noam Raz  May 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+I’m pretty sure that at least the MSVC bug has been fixed, since MSVC’s standard library actually uses braced-init-lists to guarantee order of evaluation in its internal _For_each_tuple_element.
+
+
+
+
+Malle, Joseph  May 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+Does this also work:
+template <typename… Args>void AddHandler(uint32_t command, void(*func)(Args…)){    std::apply(func, std::tuple<Args…>({Read<Args>()…}));}
+
+
+
+
+
+Роман Донченко  May 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+No, because it runs into the evaluation order problem. (And if it didn’t, the tuple wouldn’t even be necessary.)
+
+
+
+
+
+Malle, Joseph  May 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+Note the curly braces.  And from the standard: Within the initializer-list of a braced-init-list, the initializer-clauses, including any that result from pack expansions (14.5.3), are evaluated in the order in which they appear. That is, every value computation and side effect associated with a given initializer-clause is sequenced before every value computation and side effect associated with any initializer-clause that follows it in the comma-separated list of the initializer-list. [ Note: This evaluation ordering holds regardless of the semantics of the initialization; for example, it applies when the elements of the initializer-list are interpreted as arguments of a constructor call, even...Read moreNote the curly braces.  And from the standard: Within the initializer-list of a braced-init-list, the initializer-clauses, including any that result from pack expansions (14.5.3), are evaluated in the order in which they appear. That is, every value computation and side effect associated with a given initializer-clause is sequenced before every value computation and side effect associated with any initializer-clause that follows it in the comma-separated list of the initializer-list. [ Note: This evaluation ordering holds regardless of the semantics of the initialization; for example, it applies when the elements of the initializer-list are interpreted as arguments of a constructor call, even though ordinarily there are no sequencing constraints on the arguments of a call. —end note ]
+Read less
+
+
+
+
+
+Paul Topping  May 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+I love this example! Raymond Chen, you’re a smart fellow!
+Here’s a thought that I often have when reading this kind of C++ code. Is there some language that makes this kind of code easier to read and write? Asking this another way, is there a language where this kind of thing is so easy that a post like this is unnecessary? And finally, what would modern C++ look like if backward compatibility was ignored during its development?

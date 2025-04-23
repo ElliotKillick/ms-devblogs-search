@@ -1,0 +1,82 @@
+Hallvard Furuseth  September 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+I think your trick is wrong: Greg is to blame for re-adding the file in the branches. git does blame him if you reorder the 'git commit-tree' parents:
+  git commit-tree ... -p f2f -p f2v -p HEAD ...
+IIRC the first parent in a merge is not considered special, so the trick just "happens to work".
+Instead construct a merge from the parent commit and the rename-commits. That way each file only has one history:
+# First, rewind the branches to the 'rename' commits:
+git branch -f f2v f2v~
+git branch -f f2f f2f~
+git checkout -b new-trick ready
+# Copy...Read moreI think your trick is wrong: Greg is to blame for re-adding the file in the branches. git does blame him if you reorder the ‘git commit-tree’ parents:
+  git commit-tree … -p f2f -p f2v -p HEAD …
+IIRC the first parent in a merge is not considered special, so the trick just “happens to work”.
+Instead construct a merge from the parent commit and the rename-commits. That way each file only has one history:
+# First, rewind the branches to the ‘rename’ commits:
+git branch -f f2v f2v~
+git branch -f f2f f2f~
+git checkout -b new-trick ready
+# Copy the files from the commits to be merged
+git checkout f2f — .
+git checkout f2v — .
+git status
+# Create the merge as before. Put HEAD last, to show that it works:
+git merge –ff-only $(
+    git commit-tree $(git write-tree) -p f2f -p f2v -p HEAD -m “copy foods to fruits and veggies”
+)
+Now we can modify the files in a regular commit.
+Read less
+
+
+
+
+
+
+
+Hallvard Furuseth  September 29, 2019
+
+
+  0  Collapse this comment
+Copy link
+Very cool tip.  You don’t need write-tree though: Merge strategy “ours” accepts many branches.  Add –no-commit (git merge -s ours –no-commit), modify the tree and index as desired, then commit.
+Or instead of commit, use git merge –continue which will catch you if you screwed up and would commit a non-merge.
+Or drop the –no-commit, instead modify the files afterwards and then fix the merge-commit with ‘git commit –amend’.
+[Edit: Duh, the code I first gave was for the wrong post. Typical. Deleted the code for now.  Busy.]
+
+
+
+
+
+Pierre Baillargeon  September 18, 2019
+
+
+  0  Collapse this comment
+Copy link
+Everything would so much simpler if you could just tell git that a new file comes from an existing file when you add it. Something like this hypothetical command-line switch:
+git add veggies –comes-from foods
+(Side note: it’s the first time I see someone place the file redirection at the start of the line. In fact, before reading these entries, I would have assumed the command had to be first. Is this the new cool way of doing things?)
+
+
+
+
+
+Raymond Chen Author
+September 18, 2019
+
+
+  0  Collapse this comment
+Copy link
+(1) Sure, you could “tell git”, but then git would have to remember it somewhere. Other source control systems have auxiliary databases for recording this information, but git does not. (2) Redirection at the start of the line solves many problems, like spurious trailing spaces and adverse interaction with lines that end in digits.
+
+
+
+
+Simon Clarkstone  September 17, 2019
+
+
+  0  Collapse this comment
+Copy link
+I am intrigued to know what the “easy way” is. I am going to guess it’ll be introducing an extra move commit to let you use yesterday’s solution.

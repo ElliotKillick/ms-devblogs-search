@@ -1,0 +1,110 @@
+GL  August 17, 2024
+
+
+  0  Collapse this comment
+Copy link
+If binding decides the precomputed values must be correct once the timestamp check passes, it would make me very worried. If the PE timestamp is the actual time, I’m worried about build machine clock rewinding due to an NTP sync happening between two builds. If the PE timestamp is a hash, a 32-bit hash is too short for me to sleep at night, when the stake is quite high (a misbound DLL will crash upon the first call into that DLL).
+
+
+
+
+
+Joshua Hudson  August 16, 2024
+
+
+  0  Collapse this comment
+Copy link
+I’ve been thinking last commit date is correct because symbol binding is obsolete because ASLR is more important than the load speedup.
+
+
+
+
+
+BCS  August 16, 2024
+
+
+  0  Collapse this comment
+Copy link
+If the infrastructure is in place, you can have your cake and eat it too: when someone kicks off a build, look at the build graph to identify the exact list of inputs the requested build depends on, check to see which of those have changed and if and only if that set is non-null, run the impacted build steps with normal timestamps. If nothing has changed pull the already built results from cache. However for that to work in practice, you need 1) a code base that uses a fully hermetic build system with explicit dependencies at every step...Read moreIf the infrastructure is in place, you can have your cake and eat it too: when someone kicks off a build, look at the build graph to identify the exact list of inputs the requested build depends on, check to see which of those have changed and if and only if that set is non-null, run the impacted build steps with normal timestamps. If nothing has changed pull the already built results from cache. However for that to work in practice, you need 1) a code base that uses a fully hermetic build system with explicit dependencies at every step and 2) a strong enough guarantee that any binaries that should ever be “the same” will be built from the same cache.
+FWIW, a build system along the lines of Bazel makes both of those attainable, as long as you are willing to limit yourself to dependencies set up to use it or are willing to “impedance match” for dependencies that don’t.
+Read less
+
+
+
+
+
+
+
+Letao Wang  August 15, 2024
+
+
+  3  Collapse this comment
+Copy link
+I love it when people jump straight to calling something “stupid” without bothering to understand the issue, then offer their advice which wouldn’t work at all.
+
+
+
+
+
+Kevin Norris  August 16, 2024
+
+
+  1  Collapse this comment
+Copy link
+I would suggest just changing all the debug tools to refer to this field as “BinaryHash” or some such name and display it as an opaque hex value…
+…but probably somebody, somewhere, has written complicated scripting logic that tries to parse and consume this field, so that would be backwards incompatible. Rats.
+
+
+
+
+kai xie  August 15, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+I love your work, Raymond. Keep it up 🙂
+I learn something new from you every day.
+
+
+
+
+
+Marek Knápek  August 15, 2024
+
+
+  2  Collapse this comment
+Copy link
+Raymond is talking about reproducible builds, but does the Visual C++ document the /Brepro flag anywhere? Should we use, or rely on, undocumented feature?
+
+
+
+
+
+Steve  August 23, 2024
+
+
+  0  Collapse this comment
+Copy link
+You should never depend on undocumented features. /Brepo is only designed for use with non-executable, resource-only MUI files?
+Brepo doesn’t work when you're trying to compare hashes of the same sources compiled by different machines and only seems to work with locally built executables because the linker doesn’t delete any caches and re-uses previously compiled objects. The second you delete the local .vs and obj cache directories, even local builds of the same sources generate different hashes which is not how reproducibility is supposed to work.
+There’s also other issues like how import/export tables of an executable break reproducible builds because they...Read moreYou should never depend on undocumented features. /Brepo is only designed for use with non-executable, resource-only MUI files?
+Brepo doesn’t work when you’re trying to compare hashes of the same sources compiled by different machines and only seems to work with locally built executables because the linker doesn’t delete any caches and re-uses previously compiled objects. The second you delete the local .vs and obj cache directories, even local builds of the same sources generate different hashes which is not how reproducibility is supposed to work.
+There’s also other issues like how import/export tables of an executable break reproducible builds because they contain ‘Hint’ fields and the values are copied by the linker from the current operating system, these values change almost every 2 weeks with every windows update – there’s also a separate issue with /Brepro hashing uninitialized/invalid import/export table memory while hashing the image.
+If the project contains any resources like an application manifest these are patched/hacked into executables by an external cvtres.exe process by msbuild and linker.exe during the build, this process uses random guids for the temporary directory and are added to the PDB symbols and later hashed by /Brepro and break the reproduceable build and resulting hash.
+The /MP (Build with multiple processes) option also doesn’t synchronize access to the pdb, executable or object files, the order of strings and other objects in the file and PDB change location and break the reproduceable hash.
+You also need other flags like /d1nodatetime and /d1trimfile with /Brepro to remove some other information breaking reproducibility, but they don’t solve issues with cvtres.exe or the two issues with the import/export table. The best project to experiment with different options is a project created by the Microsoft dotnet team named ZeroSharp and removing all imports was the only way to make Brepo work.
+Moral of the story is don’t use undocumented functionality because it won’t do what you think it does or will change and start doing something you don’t know about.
+Read less
+
+
+
+
+
+
+
+Marek Knápek  August 24, 2024
+
+
+  0  Collapse this comment
+Copy link
+OK, I get it … Raymond is talking about reproducible builds, so … how do I achieve reproducible build of my C++ application? Any links to Microsoft documentation?

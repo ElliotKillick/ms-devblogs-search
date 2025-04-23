@@ -1,0 +1,133 @@
+Ed  March 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+Since there are so few handles (at least in Win32), isn’t this a security issue?
+If not, why not?
+
+
+
+
+
+Me Gusta  March 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+Think of it this way, what’s to stop an lower privileged application from creating a file in the user’s temp directory and then constantly calling CreateFile on the same file to open new handles to the file?
+It is easy to exhaust handles, it would only become a problem if a process opens a handle and the process can’t be terminated.
+
+
+
+
+
+Stewart  March 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+Handles are a per process resource. If they were limited per process (which they aren’t really) then the attacker process can only exhaust its own handles. And it can do that by calling any function that creates a handle, such as CreateEvent with no name
+
+
+
+
+
+Me Gusta  March 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+OK, first let's clarify terminology here.
+First, the term handle is used for multiple things, and so let's cover USER and GDI handles first. These handles are limited to 64Ki per logon session. So one process is able to exhaust another process' handles.
+Second, kernel handles are not completely process independent either. Think about where the process' handle table and the objects that the handles refer to reside. Two words, paged pool. Since the paged pool is the kernel shared memory, technically you can indirectly exhaust the total kernel handles that a process can create by exhausting the paged pool.Read moreOK, first let’s clarify terminology here.
+First, the term handle is used for multiple things, and so let’s cover USER and GDI handles first. These handles are limited to 64Ki per logon session. So one process is able to exhaust another process’ handles.
+Second, kernel handles are not completely process independent either. Think about where the process’ handle table and the objects that the handles refer to reside. Two words, paged pool. Since the paged pool is the kernel shared memory, technically you can indirectly exhaust the total kernel handles that a process can create by exhausting the paged pool.
+Hence it is easy to exhaust handles. But also notice I only stated that this would exhaust handles, I didn’t mention how this would occur.
+Read less
+
+
+
+
+
+
+
+Me Gusta  March 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+@smf
+There has been a few posts about USER and GDI handles before. Especially on how Windows reacts to them leaking.
+Where Kernel handles are closed as the process closes, User and GDI handles aren't. They can hang around open and leaked for several minutes before Windows finally closes them.
+Second, GDI handles don't have an 18,000 limit per process. That limit only applies to User handles. The per process GDI handle limit is the same as the logon session GDI handle limit, so a single process is able to use up all of the GDI handles causing other processes...Read more@smf
+There has been a few posts about USER and GDI handles before. Especially on how Windows reacts to them leaking.
+Where Kernel handles are closed as the process closes, User and GDI handles aren’t. They can hang around open and leaked for several minutes before Windows finally closes them.
+Second, GDI handles don’t have an 18,000 limit per process. That limit only applies to User handles. The per process GDI handle limit is the same as the logon session GDI handle limit, so a single process is able to use up all of the GDI handles causing other processes that use the GDI to fail.
+Thirdly, this is only the upper limit on handles. The limiting factor for User and GDI objects is the same as the real limiting factor for Kernel handles. Memory. A GDI handle will point to an object and if this object is a bitmap then you can use this to exhaust the memory for GDI objects really quickly. For example, a bitmap with dimensions 1280×720 would have 921,600 pixels, at 32bpp this would use up ~3.5MiB, you won’t need many of these to exhaust handles indirectly by using up memory.
+So the question may not be completely unrelated, but picking one important point from the OP’s question, the  “so few handles” this implies that they were thinking about how many handles that a Windows process is able to reference in general. But the handles were never really the limiting factor, the limiting factor has always been memory, and you can force Windows into a position where it is unable to create handles easily.
+But this all depends on why the original poster thinks this is a security vulnerability. Windows has enough handles to go around for normal use after all.
+Read less
+
+
+
+
+
+
+
+smf  March 26, 2020
+
+
+  0  Collapse this comment
+Copy link
+Is this question completely unrelated to the post? If not, then you’ll have to explain why.
+If it is then there is a per process limit of 18,000 user/gdi handles per process & so one program can’t consume them all. You could spin up more processes, but if you have decided to run a program that is launching a denial of service attack on your machine then I’m sure there are plenty of other interesting things you could do.
+
+
+
+
+Raymond Chen Author
+March 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+Don’t leave me guessing. Detail the vulnerability. What is the attack? Who is the attacker? Who is the victim? What has the attacker gained?
+
+
+
+
+Yukkuri Reimu  March 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+I bet this is another thing that gets reported all the time by “security researchers”…
+
+
+
+
+
+James Forshaw  March 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+Well if you can convince a privileged service to hand you back a handle with more access then you should be able to get by opening the resource then that’s a security vulnerability. Example. Not sure why security researchers are in quotes…
+
+
+
+
+
+smf  March 26, 2020
+
+
+  0  Collapse this comment
+Copy link
+Because Raymond regularly covers reports from “security researchers” who think they’ve found a vulnerability but have misunderstood what that means at a basic level.
+
+
+
+var ajaxurl_comments = 'https://devblogs.microsoft.com/oldnewthing/wp-admin/admin-ajax.php';
+var parent_post_id = 103579;
+var cpage = 1;

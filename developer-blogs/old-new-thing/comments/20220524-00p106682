@@ -1,0 +1,177 @@
+Harry Johnston  May 24, 2022
+
+
+  0  Collapse this comment
+Copy link
+I’m curious as to how Explorer would wind up running elevated in the first place.  The user kills it and then relaunches it from an elevated command window?
+
+
+
+
+
+Marek Knápek  May 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+The Explorer process can host ton of 3rd patry plugins, called shell extensions. Think of right-click context menu items or file properties dialog tabs. Those extensions can cause Explorer to misbehave, such as stuck unresponsive, spin the CPU or eat tons of RAM. The dissatisfied user then kills Explorer from (elevated) Task Manager and re-launches it from there. Explorer then inherits the elevation. From there, all other programs are elevated – this is bad.
+
+
+
+
+
+Joshua Hudson  May 24, 2022
+
+
+  0  Collapse this comment
+Copy link
+There used to be a way to get an explorer window to launch in its own process and I would frequently launch elevated explorer windows. I don’t actually do that anymore; all the reasons have gone away.
+I also ran this Windows 10 machine for the longest time with cmd.exe as the shell and would launch explorer only when necessary (ridiculous memory hog but we’ve had that discussion already). You can easily imagine what happens when you launch explorer elevated by accident from the wrong cmd.exe window.
+
+
+
+
+
+Michael Spam  May 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+I used to run an explorer “replacement” in elevated mode to do such work.   There is a very popular, free, portable explorer clone than can come in handy sometimes.   (not sure if I’m allowed to mention non-microsoft products directly here, but a quick Bing search will find it!).
+
+
+
+
+
+Neil Rashbrook  May 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+The last time I wanted to do that (sadly I forget why) I went for the old fallback of opening Notepad in elevated mode and then performing the desired task from its file open dialog.
+
+
+
+switchdesktopwithfade@hotmail.com  May 24, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+I'm more interested in the general-purpose "\Microsoft\Windows\Task Manager\Interactive" which is what Task Manager uses to run non-elevated command lines from its Run prompt. It rejects all my attempts to manually invoke it from my app, so I need to clone it so that my launcher has a way of running non-elevated processes without the unreliable method of searching for a running explorer.exe process. I'm guessing that the RunTask COM component it invokes is just a thin wrapper that lets it accurately forward an arbitrary command line without clashing with the task parameters. I don't know what else I could be...Read moreI’m more interested in the general-purpose “\Microsoft\Windows\Task Manager\Interactive” which is what Task Manager uses to run non-elevated command lines from its Run prompt. It rejects all my attempts to manually invoke it from my app, so I need to clone it so that my launcher has a way of running non-elevated processes without the unreliable method of searching for a running explorer.exe process. I’m guessing that the RunTask COM component it invokes is just a thin wrapper that lets it accurately forward an arbitrary command line without clashing with the task parameters. I don’t know what else I could be missing, judging from CreateExplorerShellUnelevatedTask.
+Read less
+
+
+
+
+
+
+
+Harry Johnston  May 24, 2022
+
+
+  0  Collapse this comment
+Copy link
+Suggestion: instead of your launcher being a single process which runs elevated, have two processes, one of which runs non-elevated and the other elevated.  That way you can launch your non-elevated processes nicely, without depending on undocumented features.
+
+
+
+
+
+switchdesktopwithfade@hotmail.com  May 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+Now tell me how to launch each of those processes.
+
+
+
+
+
+Harry Johnston  May 25, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Typically the non-elevated process would be launched from the Start Menu, and that process would then launch the elevated process, with the user's consent, of course.
+In some scenarios you might prefer the non-elevated process to start automatically when the user logs in, and there's plenty of ways of doing that - adding an entry to the Run key, for example.  Usually the part that people get stuck on is how to get the elevated process to start by itself, but it sounds like you've already got that part working, so I'm not sure why starting a non-elevated process as...Read moreTypically the non-elevated process would be launched from the Start Menu, and that process would then launch the elevated process, with the user’s consent, of course.
+In some scenarios you might prefer the non-elevated process to start automatically when the user logs in, and there’s plenty of ways of doing that – adding an entry to the Run key, for example.  Usually the part that people get stuck on is how to get the elevated process to start by itself, but it sounds like you’ve already got that part working, so I’m not sure why starting a non-elevated process as well would be a problem.
+That said, you were probably right in the first place – it would be architecturally simpler to have a single process and use task scheduler to launch the subprocesses for you.  I don’t believe this is particularly difficult?
+Edit
+In Powershell it can be as simple as this:
+$action = New-ScheduledTaskAction -Execute 'notepad.exe'
+Register-ScheduledTask -TaskName 'Launch Notepad' -Action $action -User $env:username
+Start-ScheduledTask -TaskName 'Launch Notepad'
+
+Read less
+
+
+
+
+
+skSdnW  May 24, 2022
+
+
+  0  Collapse this comment
+Copy link
+UAC has a defined set of privileges to remove and groups to deny in a token. If CreateRestrictedToken LUA_TOKEN is not correct, why not add another flag and let people easily de-elevate child processes?
+
+
+
+
+
+Ian Boyd  May 26, 2022
+
+
+  0  Collapse this comment
+Copy link
+– [How can I launch an unelevated process from my elevated process, redux](https://devblogs.microsoft.com/oldnewthing/20190425-00/?p=102443)
+
+
+
+
+
+Harry Johnston  May 24, 2022
+
+
+  0  Collapse this comment
+Copy link
+Hmmm.  I suspect that in order for everything to work the way it is meant to, it isn't sufficient to just build a token that looks like the user's non-elevated token; you need to actually use the specific non-elevated token that was generated during logon.
+If you have the elevated token you can query the associated non-elevated token using GetTokenInformation and the TokenLinkedToken class, but you may need SeTcbPrivilege for this to work properly, i.e., you need to be running as local system.  (I know you need SeTcbPrivilege if you want to get a usable elevated token from a...Read moreHmmm.  I suspect that in order for everything to work the way it is meant to, it isn’t sufficient to just build a token that looks like the user’s non-elevated token; you need to actually use the specific non-elevated token that was generated during logon.
+If you have the elevated token you can query the associated non-elevated token using GetTokenInformation and the TokenLinkedToken class, but you may need SeTcbPrivilege for this to work properly, i.e., you need to be running as local system.  (I know you need SeTcbPrivilege if you want to get a usable elevated token from a non-elevated token; I’m not sure about the other way around.)
+In most cases I think you would be better off redesigning to avoid the need to de-elevate.
+Read less
+
+
+
+
+
+
+
+Me Gusta  May 24, 2022
+
+
+  0  Collapse this comment
+Copy link
+I think it is a different issue.
+I remember before developer mode allowed it on a dev PC, you had to add the ability to create symbolic links to the account using the user rights assignment security setting if your account wasn't an administrator.
+This ended up with a really interesting situation where an administrator could create symbolic links. If you allowed it to, a limited user account which wasn't UAC restricted could create symbolic links, but a UAC restricted user account couldn't, even if you added the account to allow it to create symbolic links.
+CreateRestrictedToken just removed or...Read moreI think it is a different issue.
+I remember before developer mode allowed it on a dev PC, you had to add the ability to create symbolic links to the account using the user rights assignment security setting if your account wasn’t an administrator.
+This ended up with a really interesting situation where an administrator could create symbolic links. If you allowed it to, a limited user account which wasn’t UAC restricted could create symbolic links, but a UAC restricted user account couldn’t, even if you added the account to allow it to create symbolic links.
+CreateRestrictedToken just removed or set a fixed list of privileges and groups as deny only.
+The other thing to remember is that a token that you restrict yourself is just as good as one that is automatically restricted. CreateProcessAsUser allows you to use a restricted version of your own user token to create a new process, and it does this purely by comparing the user’s SID.
+Read less
+
+
+
+
+
+
+
+Harry Johnston  May 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+I don’t think that’s true.  For one thing, a token you’ve created yourself won’t be associated with the right set of network drive mappings.

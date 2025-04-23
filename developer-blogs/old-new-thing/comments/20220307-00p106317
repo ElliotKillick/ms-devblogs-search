@@ -1,0 +1,194 @@
+Flux  March 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+If I’ve understood correctly, the function obtains a set of pointers to the first and last pixels. Assuming that the pixels are stored in a contiguous region of memory, it iterates through the pixels by increasing the pointer address of the first pixel by one:
+for (; first < last; ++first) {
+But is it correct? The pixels occupy four bytes of memory, not one.
+
+
+
+
+
+Jeff Howe  March 7, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+[edited for clarity]
+A basic rule of C (and C++) pointers is that incrementing them adds the size of the object that the pointer is pointing to to the address in the pointer.
+first is a pointer to Pixel, which is 4 bytes in size.
+Therefore, ++first will yield an address four bytes beyond first’s original value, i.e., it’s the address of the next Pixel. From there, the individual RGBA’s can be accessed via first’s c[] member;
+
+
+
+
+
+Flux  March 8, 2022
+
+
+  0  Collapse this comment
+Copy link
+Interesting. I thought if C and C++ supported context-sensitive pointer arithmetics, it would be in the form of Inc() or Dec() macros.
+
+
+
+
+
+Jeff Howe  March 8, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+C (and its stepchild C++) is smarter than that. This has been a part of the C language since before I started using it (which was ca. 1983, Lattice C compiler for MS-DOS), as documented in the first K&R book (The C Programming Language). In C, pointers are closely related to arrays (which obviously need to take into account the size of their members), so if p is a pointer to an array of 4 byte integers:
+<code>
+then *p is equivalent to array[0], *(p + 1) is equivalent to array[1] (or otherwise stated, p + 1 == &array[1]), and...Read moreC (and its stepchild C++) is smarter than that. This has been a part of the C language since before I started using it (which was ca. 1983, Lattice C compiler for MS-DOS), as documented in the first K&R book (The C Programming Language). In C, pointers are closely related to arrays (which obviously need to take into account the size of their members), so if p is a pointer to an array of 4 byte integers:
+int array[10];  // array of int's
+int *p = array; // pointer to head of array
+then *p is equivalent to array[0], *(p + 1) is equivalent to array[1] (or otherwise stated, p + 1 == &array[1]), and so on. See e.g., Dennis Ritchie’s Development of the C Language page.
+Since first is a Pixel pointer, it can be used to iterate through arrays of Pixels, idiomatically.
+Extra credit: Since in C, macros are just sequences of valid C code with parameters that are basically just text substitutions, how would a macro like Inc() or Dec() be implemented anyways?
+[Edited to remove web links, which evidently requires moderation here. In any case, web search is your friend]
+Read less
+
+
+
+
+
+Henke37  March 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+Division? I thought darkening was saturating subtraction. Oh well, too late to change the algorithm now.
+
+
+
+
+
+Antonio Rodríguez  March 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+Darkening operates on luminance, so it should maintain the proportions between all three components (which encode hue and saturation). Adding or substracting a constant does not maintain the proportions, and thus is unsuitable to change luminance without affecting hue and saturation. Multiplication and division, on the other hand, work just fine.
+In other words, if you have the color [192, 64, 255] (violet) and divide it by half, you get [96, 32, 127], which is a darker violet. If you substract 64 from each component, you get [128, 0, 191], which is a dark purple and is clearly a different color...Read moreDarkening operates on luminance, so it should maintain the proportions between all three components (which encode hue and saturation). Adding or substracting a constant does not maintain the proportions, and thus is unsuitable to change luminance without affecting hue and saturation. Multiplication and division, on the other hand, work just fine.
+In other words, if you have the color [192, 64, 255] (violet) and divide it by half, you get [96, 32, 127], which is a darker violet. If you substract 64 from each component, you get [128, 0, 191], which is a dark purple and is clearly a different color (it is more saturated than the original, and of a different hue).
+Read less
+
+
+
+
+
+
+Rika Ichinose  March 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+Not sure if darkening ideally should be applied in linear colorspace or not, when the original was in perceptually linear sRGB.
+k = 1.0 - darkness / 256.0;
+darkened = linear_to_sRGB(sRGB_to_linear(src) * k);
+Blending two images definitely should, and isn’t darkening the same as blending with black…
+
+
+
+
+
+Raymond Chen Author
+March 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+This exercise was not meant to be visually perfect. Nonlinear scaling is fine, as long as it ranges from 0 to 256.
+
+
+
+
+Gaelan Steele  March 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+Huh, is your compiler not unrolling the inner loop itself?
+Quick testing with Godbolt seems to show that the latest versions of MSVC, Clang and GCC (all at -O2) all unroll the loop themselves.
+
+
+
+
+
+Raymond Chen Author
+March 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+Windows compiles the OS itself at -O2sx and MSVC does not unroll when you optimize for space.
+
+
+
+
+
+紅樓鍮  March 8, 2022
+
+
+  0  Collapse this comment
+Copy link
+I thought you could just use an attribute or pragma on the function and it’ll be optimized for speed.
+
+
+
+
+
+Neil Rashbrook  March 8, 2022
+
+
+  0  Collapse this comment
+Copy link
+Speaking of which, Code Golfing refers to optimising for space, not speed. For example I have a program to find out the coordinates of a tetrahedron given its edge lengths and the fact that all of the lengths involved are integers. It's only 90 bytes¹ long, but it's so inefficient it would only run on a machine with terabytes of RAM. For 114 bytes it will run on my PC, but it's been running for over a week now. For 129 bytes it will complete in under four hours. And for 161 bytes it will complete in under a minute.
+¹All...Read moreSpeaking of which, Code Golfing refers to optimising for space, not speed. For example I have a program to find out the coordinates of a tetrahedron given its edge lengths and the fact that all of the lengths involved are integers. It’s only 90 bytes¹ long, but it’s so inefficient it would only run on a machine with terabytes of RAM. For 114 bytes it will run on my PC, but it’s been running for over a week now. For 129 bytes it will complete in under four hours. And for 161 bytes it will complete in under a minute.
+¹All counts are for source code in the same language (which language it is isn’t relevant for the comparison).
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+March 8, 2022
+
+
+  0  Collapse this comment
+Copy link
+Thanks for the correction.
+
+
+
+
+
+Flux  March 8, 2022
+
+
+  0  Collapse this comment
+Copy link
+There is no point in nitpicking on a Microsoft employee's bad English usage. They do it all the time.
+For example, when they say "boot partition," they are referring to a partition that has nothing to do with the boot loader or boot process. (It's the partition on which the Windows folder resides.) When they say "Windows Subsystem for Linux," they really mean a Linux subsystem for Windows. (Compare with Visual Studio for Mac, or Office for Windows.)  When they say ".NET Standard," they don't mean ECMA-334 or ISO/IEC 23271:2012. When they say "inbox," they really mean "out-of-the-box." When they...Read moreThere is no point in nitpicking on a Microsoft employee’s bad English usage. They do it all the time.
+For example, when they say “boot partition,” they are referring to a partition that has nothing to do with the boot loader or boot process. (It’s the partition on which the Windows folder resides.) When they say “Windows Subsystem for Linux,” they really mean a Linux subsystem for Windows. (Compare with Visual Studio for Mac, or Office for Windows.)  When they say “.NET Standard,” they don’t mean ECMA-334 or ISO/IEC 23271:2012. When they say “inbox,” they really mean “out-of-the-box.” When they say “x86,” they are only referring to the 32-bit memory architecture of i386.
+I could go on and on… But the punchline is: Microsoft’s English is bad. Just get used to it.
+Read less
+
+
+
+
+
+Peter Cooper Jr.  March 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+It's unclear to me what metric this "1.8× improvement" is referring to. If it's some measurement of execution time per loop, then I would have expected any half-decent optimizing compiler to have made the change for you, though I haven't done any testing of it myself to be sure. But the title is referencing "Code golfing", which usually refers to characters of source code in my experience, but the "improved" version has more characters. What exactly is it that we're trying to improve here, and why (if any reason beyond that code golfing can be fun)? I'm reminded of Eric...Read moreIt’s unclear to me what metric this “1.8× improvement” is referring to. If it’s some measurement of execution time per loop, then I would have expected any half-decent optimizing compiler to have made the change for you, though I haven’t done any testing of it myself to be sure. But the title is referencing “Code golfing”, which usually refers to characters of source code in my experience, but the “improved” version has more characters. What exactly is it that we’re trying to improve here, and why (if any reason beyond that code golfing can be fun)? I’m reminded of Eric Lippert’s classic post “250% of What, Exactly?“
+Read less

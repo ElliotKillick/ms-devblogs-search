@@ -1,0 +1,47 @@
+Ben Voigt  January 23, 2020
+
+
+  0  Collapse this comment
+Copy link
+This code to cancel a subscription is significantly simpler than it would be in .NET, e.g. C++/CLI.  For one thing, it’s not thread-safe, and for another, .NET delegates are multicast so you couldn’t safely null the whole invocation list, you’d have to subtract just the one subscriber that threw (and because of thread-safety issues, you’d have to do that from inside an interlocked-compare-exchange loop).
+I tried to find whether Windows Runtime delegates are also multicast, but the C++/CX documentation wasn’t clear on that point.
+
+
+
+
+
+Raymond Chen Author
+January 23, 2020
+
+
+  0  Collapse this comment
+Copy link
+A Windows Runtime delegate is simply an object with an Invoke method and is therefore unicast. (Events, on the other hand, are multicast.) An app could create a delegate whose Invoke method in turn calls the Invoke method of other delegates, but that's the app's choice, and if one of those sub-delegates throws an exception in its Invoke, it's up to the wrapper delegate to decide what to do. (Remove the sub-delegate from its list and keep going, or propagate the exception out of the wrapper delegate and stop.) C# is the weirdo here: In C#, delegates are mutable and...Read moreA Windows Runtime delegate is simply an object with an Invoke method and is therefore unicast. (Events, on the other hand, are multicast.) An app could create a delegate whose Invoke method in turn calls the Invoke method of other delegates, but that’s the app’s choice, and if one of those sub-delegates throws an exception in its Invoke, it’s up to the wrapper delegate to decide what to do. (Remove the sub-delegate from its list and keep going, or propagate the exception out of the wrapper delegate and stop.) C# is the weirdo here: In C#, delegates are mutable and can change their targets dynamically.
+Read less
+
+
+
+
+
+
+
+snarfblam  January 23, 2020
+
+
+  0  Collapse this comment
+Copy link
+Hmm? I thought c# delegates were immutable. Adding or removing an invocation target creates a new delegate object with its own readonly invocation list, no? C# events are mutable (that they wrap a mutable reference to a delegate). Have things changed since “the old days” of c#?
+
+
+
+
+
+Raymond Chen Author
+January 23, 2020
+
+
+  0  Collapse this comment
+Copy link
+You can += a delegate. Does that mutate the delegate, or does it create a new delegate and retarget the reference? I’m not sure.
+I just tried it. It appears that += creates a new delegate and retargets the reference. So C# delegates are also immutable. How about that.
+So the deal is that C# is the weirdo because it supports the “+” operator on delegates.

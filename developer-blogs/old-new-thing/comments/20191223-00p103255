@@ -1,0 +1,73 @@
+Joe Beans  December 23, 2019
+
+
+  0  Collapse this comment
+Copy link
+I dealt with this problem while wrapping coroutines around I/O in C#.  What would happen is that I would begin an OVERLAPPED operation but the completed OVERLAPPED would get posted to the thread pool before I even received the continuation delegate from the async builder state machine! This made the awaiter logic more complicated.
+The way I solved it was to have an Interlocked.Decrement(...) countdown variable inside the awaiter initialized to 2 if the API returned ERROR_IO_PENDING. When the thread pool callback was called, it decremented. When it was time to check OnCompleted, it decremented. Whichever branch reached 0 was...Read moreI dealt with this problem while wrapping coroutines around I/O in C#.  What would happen is that I would begin an OVERLAPPED operation but the completed OVERLAPPED would get posted to the thread pool before I even received the continuation delegate from the async builder state machine! This made the awaiter logic more complicated.
+The way I solved it was to have an Interlocked.Decrement(…) countdown variable inside the awaiter initialized to 2 if the API returned ERROR_IO_PENDING. When the thread pool callback was called, it decremented. When it was time to check OnCompleted, it decremented. Whichever branch reached 0 was the one to call the continuation.
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  December 23, 2019
+
+
+  0  Collapse this comment
+Copy link
+And someone was wondering why I might want to do EnterCriticalSection from one thread and release it in another.
+async IO appears to be a good reason.
+
+
+
+
+
+Joshua Hudson  December 23, 2019
+
+
+  0  Collapse this comment
+Copy link
+And no comments show up on this article w/o being logged in.
+
+
+
+
+Kalle Niemitalo  December 23, 2019
+
+
+  0  Collapse this comment
+Copy link
+This feels similar to IoMarkIrpPending, STATUS_PENDING, and PendingReturned in WDM drivers. Conditionally transferring ownership to another execution agent.
+How about this kind of solution:
+      /* In case the lambda is dequeued and run
+       * before TryEnqueue even returns.  */
+      m_queued = true;
+      if (m_dispatcher.TryEnqueue([handle]
+        {
+          handle();
+        }))
+   ...Read moreThis feels similar to IoMarkIrpPending, STATUS_PENDING, and PendingReturned in WDM drivers. Conditionally transferring ownership to another execution agent.
+How about this kind of solution:
+      /* In case the lambda is dequeued and run
+       * before TryEnqueue even returns.  */
+      m_queued = true;
+      if (m_dispatcher.TryEnqueue([handle]
+        {
+          handle();
+        }))
+      {
+        /* Successfully enqueued.  Do not access *this.  */
+        return true;
+      }
+      else
+      {
+        /* Could not enqueue.  OK to access *this.  */
+        m_queued = false;
+        return false;
+      }
+I worried about whether the coroutines are cleaned up at all if the dispatcher queue is shut down while there are delegates in it; but the DispatcherQueueController.ShutdownQueueAsync documentation seems to say that it first stops accepting new work and then calls all the delegates that had already been queued.
+Read less

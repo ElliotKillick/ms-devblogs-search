@@ -1,0 +1,86 @@
+M. W.  May 14, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+Does each application get its own DnD instance or is there a global shared one? I've seen it get stuck on numerous occasions where for example, there is a ghost image of a file or folder stuck on the desktop and drag-and-drop no longer works and I have to jump through hoops to try to get Explorer to let me drag something again (which usually doesn't work at all until I restart it or reboot). I've also seen many occasions where Explorer simply won't updating to reflect changes when files and folders are moved or even where the cut/copy/paste function...Read moreDoes each application get its own DnD instance or is there a global shared one? I’ve seen it get stuck on numerous occasions where for example, there is a ghost image of a file or folder stuck on the desktop and drag-and-drop no longer works and I have to jump through hoops to try to get Explorer to let me drag something again (which usually doesn’t work at all until I restart it or reboot). I’ve also seen many occasions where Explorer simply won’t updating to reflect changes when files and folders are moved or even where the cut/copy/paste function no longer works and files and folders can’t be copied or moved. I can’t help but wonder if they’re all related. 🤔 If there’s a global feature, then it might be a bad program that messed it up (I recall a long time ago, doing a job-application online that included a piece of Flash in the application page that would rapidly clear the clipboard in a tight loop to prevent copying and pasting for whatever reason, which affected the whole system—I was furious that it could have made me lose data if I had copied something big to the clipboard and it took the liberty of clearing it behind my back without warning), so it’s certainly possible for programs to affect the whole system.
+Read less
+
+
+
+
+
+
+
+紅樓鍮  May 13, 2021
+
+
+  0  Collapse this comment
+Copy link
+Is it a requirement to use GlobalAlloc here?
+
+
+
+
+
+Chris Iverson  May 14, 2021
+
+
+  0  Collapse this comment
+Copy link
+Yes.  The documentation for CFSTR_DROPDESCRIPTION specifically defines the data structure as being an HGLOBAL, which needs to come from GlobalAlloc.
+More specifically, the STGMEDIUM(storage medium) parameter is defined to hold TYMED_HGLOBAL, which the TYMED doc lists as
+“The storage medium is a global memory handle (HGLOBAL). Allocate the global handle with the GMEM_MOVEABLE flag. If the punkForRelease member of STGMEDIUM is NULL, the destination process should use GlobalFree to release the memory.”
+
+
+
+
+
+紅樓鍮  May 17, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+I’m tentative about whether that requirement is actually enforced in Windows NT, because in the given code snippet GPTR (which implies GMEM_FIXED) is passed to GlobalAlloc, whereas TYMED_HGLOBAL accordingly requires GMEM_MOVEABLE.  GMEM_FIXED causes GlobalAlloc to return a pointer, whereas GMEM_MOVEABLE causes it to return an opaque handle, so if TYMED_HGLOBAL does work the way it is described, the given code should not work because the incorrect type of argument is passed.
+
+
+
+
+
+skSdnW  May 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+GlobalAlloc is absolutely required and the example code is correct. Think about what the data object is going to do; GlobalLock, use data, GlobalUnlock, GlobalFree. The trick here is that GlobalLock on a fixed HGLOBAL is legal.
+The bug potential is in custom data objects. If they forget to call Lock they will seem to work fine when given fixed memory but break when given movable memory.
+See also: Search this blog for GlobalAlloc to find the series on the Global/Local memory and their history.
+
+
+
+Stuart Ballard  May 13, 2021
+
+
+  0  Collapse this comment
+Copy link
+Does that mean it's up to every application to associate semantics with particular modifier keys - they have to ask "is the ctrl key pressed?" and know the convention that ctrl means copy, rather than being able to ask the framework "is this a copy operation?"
+That would seem to pose some interesting future-compatibility challenges: if the touchscreen UI wanted to adopt a convention that two-finger drag means copy[1], or a Minority Report style VR gesture-based UI wanted to base it on clenched fist vs open palm, would the OS need to fake the ctrl key being pressed in those situations,...Read moreDoes that mean it’s up to every application to associate semantics with particular modifier keys – they have to ask “is the ctrl key pressed?” and know the convention that ctrl means copy, rather than being able to ask the framework “is this a copy operation?”
+That would seem to pose some interesting future-compatibility challenges: if the touchscreen UI wanted to adopt a convention that two-finger drag means copy[1], or a Minority Report style VR gesture-based UI wanted to base it on clenched fist vs open palm, would the OS need to fake the ctrl key being pressed in those situations, or would legacy apps just be unable to detect the new convention without a code update?
+[1] I presume that something like this actually had to be addressed when Windows got touch support, but I’ve never used a touch-based Windows device so I don’t know what convention is actually used, if any.
+Read less
+
+
+
+
+
+
+
+Andrew Cook  May 13, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+The touch convention is that immediate drag is treated as left-click drag and tap-and-hold then drag is treated as right-click drag. Standard keyboard modifiers apply. If you're on a device without a keyboard, you're not out of luck, since all of the options available with modifier keys are typically (and required by the Windows UI design guidelines) also available on the context menu after a right-click drag.
+Not every application has the same verbs for a drag-drop operation -- "move" and "copy" might be nonsensical in context -- so of course it should be up to every application to decide what...Read moreThe touch convention is that immediate drag is treated as left-click drag and tap-and-hold then drag is treated as right-click drag. Standard keyboard modifiers apply. If you’re on a device without a keyboard, you’re not out of luck, since all of the options available with modifier keys are typically (and required by the Windows UI design guidelines) also available on the context menu after a right-click drag.
+Not every application has the same verbs for a drag-drop operation — “move” and “copy” might be nonsensical in context — so of course it should be up to every application to decide what combination of modifiers from different sources is best for them. As a convenience, Explorer provides additional UI affordances for “add to” kinds of verbs, and because in Explorer that’s used for copy operations they call that additional UI affordance DROPIMAGE_COPY.
+Read less

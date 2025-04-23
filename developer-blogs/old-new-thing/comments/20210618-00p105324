@@ -1,0 +1,70 @@
+Jonathan Duncan  June 19, 2021
+
+
+  0  Collapse this comment
+Copy link
+I'm not sure what the windows ARM syscall convention is, but on Linux despite the fact that the `svc` instruction provides a handy #imm8 (or #imm24 in ARM mode), this isn't used to hold the syscall number.
+This is not just because they might need more than 256 syscalls, but is also to do with the fact that the ARM CPU doesn't provide any easy way of accessing the immediate of this instruction once the syscall is trapped into supervisor mode.
+The old Linux OABI syscall convention did use to use the immediate but this required reading and (essentially) disassembling the...Read moreI’m not sure what the windows ARM syscall convention is, but on Linux despite the fact that the `svc` instruction provides a handy #imm8 (or #imm24 in ARM mode), this isn’t used to hold the syscall number.
+This is not just because they might need more than 256 syscalls, but is also to do with the fact that the ARM CPU doesn’t provide any easy way of accessing the immediate of this instruction once the syscall is trapped into supervisor mode.
+The old Linux OABI syscall convention did use to use the immediate but this required reading and (essentially) disassembling the last instruction at the userspace PC to extract the immediate.
+This had issues with being fairly slow, and required having additional code in place to handle the fact the read could potentially page fault.
+As far as I can tell everyone has decided that the `svc` immediate was all-around a bad idea and resorted to putting the syscall number in a register.
+Read less
+
+
+
+
+
+
+
+Jonathan Duncan  June 19, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+ARM NOP facts:
+1. Prior to ARMv6 ARM didn't really have a NOP instruction, if you wrote "NOP" you'd actually get "mov r0, r0"(ARM) or "mov r8, r8"(THUMB)
+2. In ARM mode `00 00 00 00` encodes to `andeq   r0, r0, r0` which is effectively a NOP, which is handy to remember.
+3. In THUMB mode `00 00` encodes to `movs r0, r0` which is almost a NOP (but does corrupt flags).
+The last two things means in case of data corruption causing a jump to uninitialised data you'll sometimes see access violation at the first byte after a executable...Read moreARM NOP facts:
+1. Prior to ARMv6 ARM didn’t really have a NOP instruction, if you wrote “NOP” you’d actually get “mov r0, r0″(ARM) or “mov r8, r8″(THUMB)
+2. In ARM mode `00 00 00 00` encodes to `andeq   r0, r0, r0` which is effectively a NOP, which is handy to remember.
+3. In THUMB mode `00 00` encodes to `movs r0, r0` which is almost a NOP (but does corrupt flags).
+The last two things means in case of data corruption causing a jump to uninitialised data you’ll sometimes see access violation at the first byte after a executable region. This means the CPU has fallen off the end of a mapped region after sliding through pages of uninitialised `00` bytes.
+Read less
+
+
+
+
+
+
+
+Oliver Atkins  June 18, 2021
+
+
+  0  Collapse this comment
+Copy link
+Thanks for this fun series. It reminds me of dipping my toe into ARM assembler on my Archimedes A410 as a kid. You could access an ARM assembler through BBC BASIC, all of which was in ROM, so it was very easy to get started.
+
+
+
+
+
+Neil Rashbrook  June 19, 2021
+
+
+  0  Collapse this comment
+Copy link
+Although that would have been an ARM-2, so somewhat different to the Thumb ARM that’s being described here. For instance, in classic ARM, you have the luxury of 16,777,216 different software interrupts! (I don’t know how many the Archimedes actually used though.)
+
+
+
+
+
+Simon Farnsworth  June 25, 2021
+
+
+  0  Collapse this comment
+Copy link
+RISC OS splits the 24 bit SWI numbers into a set of bitfields. The OS itself reserves all SWI numbers below 0x40000 for its own use, and thus the SWI table was very sparse.

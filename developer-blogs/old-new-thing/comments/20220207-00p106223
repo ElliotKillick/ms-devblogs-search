@@ -1,0 +1,210 @@
+Samuel Bronson  February 17, 2022
+
+
+  0  Collapse this comment
+Copy link
+Well, I was wondering how other compilers did with the  version on x86-32, so I tried it on compiler explorer, and the results for GCC look pretty lousy.
+Input:
+<code>
+Note that Compiler Explorer apparently doesn't have separate 32-bit options for these compilers, so I had to pass  throughout. (GCC 1.27 kept crashing, and it's said not to support a 64-bit integer type anyway.)
+<code>
+So yeah, GCC *immediately* forgets that the top halfs of the 64-bit versions of a and b are zero and does ALL of the adding. (Apparently -fsplit-wide-types was supposed to help with this ... but it doesn't...Read moreWell, I was wondering how other compilers did with the unsigned long long version on x86-32, so I tried it on compiler explorer, and the results for GCC look pretty lousy.
+Input:
+__attribute__((fastcall))
+unsigned average(unsigned a, unsigned b)
+{
+    // Suppose "unsigned" is a 32-bit type and
+    // "unsigned long long" is a 64-bit type.    
+    return ((unsigned long long)a + b) / 2;
+}
+
+Note that Compiler Explorer apparently doesn’t have separate 32-bit options for these compilers, so I had to pass -m32 throughout. (GCC 1.27 kept crashing, and it’s said not to support a 64-bit integer type anyway.)
+        push    ebx // save ebx
+        mov     eax, DWORD PTR [esp+8] // a
+        xor     ebx, ebx // zero extend b (says -fverbose-asm)
+        xor     edx, edx // zero extend a
+        mov     ecx, DWORD PTR [esp+12] // b
+        add     eax, ecx
+        adc     edx, ebx
+        pop     ebx // restore ebx
+        shrd    eax, edx, 1
+        ret
+So yeah, GCC *immediately* forgets that the top halfs of the 64-bit versions of a and b are zero and does ALL of the adding. (Apparently -fsplit-wide-types was supposed to help with this … but it doesn’t actually split zero extensions on 32-bit x86 for some reason.) Seems to have been more-or-less the same throughout the range of GCC versions available on Compiler Explorer. (Except GCC 1.27, which was crashing for me, and supposedly doesn’t support “long long” anyway.)
+// Clang trunk -m32 -O
+        mov     ecx, dword ptr [esp + 8]
+        xor     eax, eax
+        add     ecx, dword ptr [esp + 4]
+        setb    al
+        shld    eax, ecx, 31
+        ret
+Not too terrible: It’s somehow worked out that it can use the carry flag … but for some reason it’s decided to shift in from the right. (Which is a apparently a thing you can do on x86.)
+// Clang 3.0.0 -m32 -O
+        mov     ECX, DWORD PTR [ESP + 8]
+        add     ECX, DWORD PTR [ESP + 4]
+        sbb     EAX, EAX
+        shld    EAX, ECX, 31
+        ret
+Basically the same, except instead of zero-extending that carry bit with the xor and the setb, this version of clang is essentially sign-extending it.
+Read less
+
+
+
+
+
+
+
+Thief  February 8, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+That patent is hilarious.
+To calculate (A+B)/2 in a single cycle in hardware, their idea is to calculate (A/2)+(B/2) and (A/2)+(B/2)+1 in parallel and then select between them based on ((A&1)&(B&1)). Immediately I wondered why they didn't just feed ((A&1)&(B&1)) in as the carry-in to a single adder.
+But... it's even simpler than that. A typical adder already outputs N+1 bits in the form of the output and carry-out. As Raymond points out, you just need to shift right including that carry bit. Which in hardware, is just wiring the output offset by one connection. A single ordinary N-bit adder with a...Read moreThat patent is hilarious.
+To calculate (A+B)/2 in a single cycle in hardware, their idea is to calculate (A/2)+(B/2) and (A/2)+(B/2)+1 in parallel and then select between them based on ((A&1)&(B&1)). Immediately I wondered why they didn’t just feed ((A&1)&(B&1)) in as the carry-in to a single adder.
+But… it’s even simpler than that. A typical adder already outputs N+1 bits in the form of the output and carry-out. As Raymond points out, you just need to shift right including that carry bit. Which in hardware, is just wiring the output offset by one connection. A single ordinary N-bit adder with a single ordinary N-bit output, and no multiplexer required.
+Read less
+
+
+
+
+
+
+
+紅樓鍮  February 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+You forgot to mark the first code snippet as “code in italics is wrong”.
+
+
+
+
+
+Antonio Rodríguez  February 8, 2022
+
+
+  0  Collapse this comment
+Copy link
+It isn’t wrong per se. It just produces the wrong result in one corner case, which I’d say is quite infrequent: averaging two pointers isn’t meaningful, and the most frequent numeric values are way smaller than those that would trigger the corner case (see Benford’s law: https://en.wikipedia.org/wiki/Benford%27s_law), so chances are that the function is called in a place where it is known that both arguments are inside the valid range. In that case, the first code sample is perfectly valid.
+
+
+
+
+
+Raymond Chen Author
+February 8, 2022
+
+
+  0  Collapse this comment
+Copy link
+If software were required to work correctly only in common cases, software development would be a lot easier. The nasty bugs are in the corner cases.
+
+
+
+
+
+Antonio Rodríguez  February 8, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Right. But if you know the range of both parameters, and that range never produces a sum bigger than or equal to 2^32, you do know that the corner case will never get hit. For example, if you are averaging indexes in a binary search, you do know the array size – and I think it’s safe to say that arrays with more than 2^31 items are pretty rare. If you know your program will never create such a big array (or if it has checks preventing that), the corner case simply will never happen.
+
+
+
+
+
+Daniel Sturm  February 13, 2022
+
+
+  0  Collapse this comment
+Copy link
+"For example, if you are averaging indexes in a binary search, you do know the array size – and I think it’s safe to say that arrays with more than 2^31 items are pretty rare."
+So rare that it took the JDK code that did exactly this about a decade and a bit before people started to complain about getting wrong results ("practically impossible with year 2000 hardware" just isn't the same in 2010 and "pretty rare" will happen quite regularly if your code is executed in lots of different scenarios by lots of people).
+To be snarky: If the result...Read more“For example, if you are averaging indexes in a binary search, you do know the array size – and I think it’s safe to say that arrays with more than 2^31 items are pretty rare.”
+So rare that it took the JDK code that did exactly this about a decade and a bit before people started to complain about getting wrong results (“practically impossible with year 2000 hardware” just isn’t the same in 2010 and “pretty rare” will happen quite regularly if your code is executed in lots of different scenarios by lots of people).
+To be snarky: If the result doesn’t have to be correct, I propose the following replacement:
+return 4;
+Hard to beat performance wise and still correct for the one example I just tried 😉
+Read less
+
+
+
+
+
+
+
+Aged .Net Guy  February 9, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+True as far as that goes.  But IMO that's not going very far ...
+I think there are 4 cases:
+1. This function uses an algorithm that cannot overflow regardless of the parameters.  In this case, this code would have no bugs.
+2. This function contains explicit checks for parameters that would trigger overflow and fails those calls with some variation of an argument exception.  Or equivalently, this code detects any overflow when it occurs and propagates that failure as some form of overflow exception. In this case, this code would have no bugs. But ... unless all callers in...Read moreTrue as far as that goes.  But IMO that’s not going very far …
+I think there are 4 cases:
+1. This function uses an algorithm that cannot overflow regardless of the parameters.  In this case, this code would have no bugs.
+2. This function contains explicit checks for parameters that would trigger overflow and fails those calls with some variation of an argument exception.  Or equivalently, this code detects any overflow when it occurs and propagates that failure as some form of overflow exception. In this case, this code would have no bugs. But … unless all callers in all possible call chains are aware of these possible exceptions this code might throw, these unexpected exceptions would be a source of latent bugs for its callers. Bugs which may lie latent for years or decades or maybe even forever.
+3. This function is private enough that at the time the function is written all possible states of all possible callers are known to be unable to trigger overflow. In this case, this code as written is correct enough. For the current use case today. But it has a latent bug which will fail when the implicit assumptions this code makes about all the possible states of all its possible callers are later invalidated.
+4. This code is published as-is in a public library with no way for the author to know anything about who will call it and what the parameters may be.  In this case this code is blatantly obviously buggy right here right now. Despite the fact people and organizations far more skilled than I am have repeatedly published it to the entire world containing those bugs.
+The Java library Mr. Chen cites was Case #4. It was buggy for its intended audience the day it was written.
+Deliberately writing for Case #3 (which seems to be what you are suggesting) is deliberately building in technical debt as, in general,  there’s no practical way for the author of this code to know how its callers may change over time, nor to be notified when those changes occur. Nor is there any practical way for the authors of the entire present and future call chain to be reliably notified of the limitations inherent in this function as written.
+Case #2, particularly in the absence of language support for declaring all possible throwable exceptions / errors, etc., is simply a variant of Case #3. The surprise failure is still there, it just manifests differently when the caller springs the trap on themselves.
+Which leaves us with Case #1 as the only bugless choice.
+At least from the POV of programmers who write code for public consumption. Where “public” pretty well means “any project whose scope exceeds one developer and whose lifetime exceeds that programmer’s perfect memory of the code’s limitations.”
+Read less
+
+
+
+
+
+Spencer Churchill  February 7, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+I think the best option for a non-overflowing average is:
+
+unsigned avg(unsigned a, unsigned b)
+{
+    return (a & b) + (a ^ b) / 2;
+}
+
+// lw      $3,8($fp)  # 5
+// lw      $2,12($fp) # 5
+// and     $3,$3,$2   # 4
+// lw      $4,8($fp)  # 5
+// lw      $2,12($fp) # 5
+// xor     $2,$4,$2   # 4
+// srl     $2,$2,1    # 4
+// addu    $2,$3,$2   # 4
+
+The total cycles is 36 in MIPS ASM.
+
+
+
+
+
+Joshua Hudson  February 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+I remember getting really mad back in the day when I couldn’t convince the compiler to generate:
+    mul bx
+    div  cx
+When I really wanted to multiply and divide and the result fit in 16 bits but the intermediate product didn’t. But this takes the cake.
+
+
+
+
+
+Neil Rashbrook  February 8, 2022
+
+
+  0  Collapse this comment
+Copy link
+This is why I liked the TopSpeed compiler; you could define an inline function by specifying the appropriate bytes of code and calling convention, so for that example you would tell it that the code took three arguments in registers ax, bx and cx, dx was destroyed and the result was in ax.

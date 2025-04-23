@@ -1,0 +1,125 @@
+Piotr Siódmak  September 18, 2021
+
+
+  0  Collapse this comment
+Copy link
+What tipped you off that Program1.dmp, Program2.dmp and Program3.dmp submitted to Windows Error Reporting were related to each other? Was the fact that the instruction pointer pointed to empty memory the only thing? I would guess this would be classified as “calling a DLL function after unloading the DLL” and discarded as a common programming error and never forwarded from the automatic triager to a human.
+
+
+
+
+
+Me Gusta  September 20, 2021
+
+
+  0  Collapse this comment
+Copy link
+In this case, the call is a relative call, and it is a call backwards. The call instruction has an immediate version, where you give a signed 16 or 32 bit value. If you look at the instruction encoding, it is 0xe8 (op code for call) 0x13 0xfd 0xff 0xff. This is the call instruction followed by a 32 bit immediate in little endian format. This is an offset of 0xfffffd13, and since this is a signed value then the highest bit being set means that this is negative.
+If you use twos compliment to negate this, you will end...Read moreIn this case, the call is a relative call, and it is a call backwards. The call instruction has an immediate version, where you give a signed 16 or 32 bit value. If you look at the instruction encoding, it is 0xe8 (op code for call) 0x13 0xfd 0xff 0xff. This is the call instruction followed by a 32 bit immediate in little endian format. This is an offset of 0xfffffd13, and since this is a signed value then the highest bit being set means that this is negative.
+If you use twos compliment to negate this, you will end up with a value of 0x2ed. The instruction being at 0x7ffc9d1c6214 and 5 bytes long means that this call would have called the address 0x7ffc9d1c5f2c. However, the RIP had the address 0x7ffd9d1c5f2c, this means that there was no way the call could have transferred control to this location.
+So the reason why this was not seen as a call after free is that the call could not do what happened and shenanigans were happening.
+Read less
+
+
+
+
+
+
+Akash Bagh  September 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+this comment has been deleted.
+
+
+
+
+
+Me Gusta  September 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+You also must remember that this is not the only potential cause of unrelated application crashes.
+Subtly bad hardware, unstable overclocks, corrupted operating system files/settings and bad drivers amongst other things all have the ability to cause crashes.
+But anyway, to quote the last sentence before the bonus chatter section:
+"The crashes started to abate, but they don’t go away completely because not everybody is diligent about installing patches."
+The best way to deal with this as a potential problem source for your system is to just check to see if any applications on your system are not at the...Read moreYou also must remember that this is not the only potential cause of unrelated application crashes.
+Subtly bad hardware, unstable overclocks, corrupted operating system files/settings and bad drivers amongst other things all have the ability to cause crashes.
+But anyway, to quote the last sentence before the bonus chatter section:
+“The crashes started to abate, but they don’t go away completely because not everybody is diligent about installing patches.”
+The best way to deal with this as a potential problem source for your system is to just check to see if any applications on your system are not at the latest version and then update. But beware, this may not be the cause of your problems and so updating any applications may not fix the problem.
+Read less
+
+
+
+
+
+
+
+Brian Boorman  September 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+Raymond’s ground rules for this blog (see the link in the “Relevant Links” footer section below) prohibit naming or attempting to guess the name of programs that he doesn’t name.
+
+
+
+
+David Wolff  September 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+Is the program that caused this in user space? Does this mean that anyone can deliberately write a program to make other programs crash?
+
+
+
+
+
+MGetz  September 20, 2021
+
+
+  0  Collapse this comment
+Copy link
+If you ask a browser writers those programs are called 3rd party AV (keeping with blog rules no guilty parties will be named). Which used to do things like this all the time to them in an effort to make them more 'secure'. In many cases this actually made them less secure than if the AV had just used the kernel mode hooks MS sets up for them. This also used to be common in enterprise as a way to 'monitor' use of some methods as a way of maintaining 'corporate security'. Again... misguided as that's a firewall problem.
+There is...Read moreIf you ask a browser writers those programs are called 3rd party AV (keeping with blog rules no guilty parties will be named). Which used to do things like this all the time to them in an effort to make them more ‘secure’. In many cases this actually made them less secure than if the AV had just used the kernel mode hooks MS sets up for them. This also used to be common in enterprise as a way to ‘monitor’ use of some methods as a way of maintaining ‘corporate security’. Again… misguided as that’s a firewall problem.
+There is a reason that detours is officially not supported anymore, because there are better ways to do anything it was supposed to do. Most often with less likelihood of crashing too. On a modern x64 machine there are also a lot of things working against this: DEP, CFG, the new intel shadow stack etc. So even if you were able to get the hook in, there is a really good chance you’d crash because of one of those. Having reviewed the Chromium source code which dynamically creates CFG metadata for your javascript when it JITs it’s not trivial to work around this (also that’s some seriously interesting code).
+Read less
+
+
+
+
+
+
+
+aaaaaa 123456789  September 18, 2021
+
+
+  0  Collapse this comment
+Copy link
+The short version of the story is that, if your privileges are high enough, you can do (almost) anything. Writing to other process images is a well-documented privilege. (Consider the action of a debugger, for instance: it may need to do this to create breakpoints. That’s why SeDebugPrivilege is such a sensitive privilege to grant!)
+
+
+
+
+
+Me Gusta  September 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+Basically, it seems to do wide scale injection and redirection of a certain function. While Raymond didn’t give the actual name, it was a function in NTDLL.
+Anyway, the answer to this is yes for regular desktop applications. Especially if the program which causes the crash runs with admin privileges. All it has to do is use whatever means needed to inject a library and there you go. The humble LoadLibrary, CreateRemoteThread and VirtualAlloc are all you really need, besides the DLL of course.
+
+
+
+
+Joshua Hudson  September 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+That call fixup is doing it the hard way. When writing out the call in the run-tail, generate a call indirect [offset] instruction where offset refers to the run-tail’s data region (only a few bytes away) and contains the 8 byte absolute address. The same applies to any jmp instruction. If you encounter a conditional jump, you cannot patch that. I would also question whether such a function complies with the calling convention at all.

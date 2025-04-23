@@ -1,0 +1,169 @@
+Thomas Harte  March 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+For full CP/M compatibility, the OS has to be present at the top of address space, _and_ begin on a 256-byte boundary. So $FEFF is actually the potential top of RAM.
+Specifically: many applications, including Microsoft BASIC, crib the target address from the JMP at $0005 and dynamically modify themselves slightly to reduce calling costs. So the JMP needs to be to an actual JMP to a real address.
+Some, such as Wordstar 4, go beyond that to cribbing from the per-call JMP table that is guaranteed to be at the start of CP/M’s address space, and do so by taking the...Read moreFor full CP/M compatibility, the OS has to be present at the top of address space, _and_ begin on a 256-byte boundary. So $FEFF is actually the potential top of RAM.
+Specifically: many applications, including Microsoft BASIC, crib the target address from the JMP at $0005 and dynamically modify themselves slightly to reduce calling costs. So the JMP needs to be to an actual JMP to a real address.
+Some, such as Wordstar 4, go beyond that to cribbing from the per-call JMP table that is guaranteed to be at the start of CP/M’s address space, and do so by taking the top byte from the JMP and loading the bottom byte appropriately. So 256-byte alignment is required.
+Having written a CP/M emulator, Wordstar 4 was virtually the last thing I got working, having not clocked that requirement for a while.
+Read less
+
+
+
+
+
+
+
+John Elliott  March 10, 2020
+
+
+  0  Collapse this comment
+Copy link
+In real CP/M, the jump at 5 is to $xx06, because the first 6 bytes of the OS are the serial number.
+
+
+
+
+Dmitry  March 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+I’ve been telling (and showing) this stuff to students learning x86 assembly programming for several years by now. Believe it or not but this year discussing call and ret is going to happen the next week, and the fact about zero at the top of the com-program’s stack has already been given. Yet another case of your posts being somehow synchronized with what people around the world do. Cool!
+
+
+
+
+
+John Elliott  March 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+This is connected to the long-standing bug with PSPs created by DEBUG where the CALL 5 points to the wrong place - the code at SAVSTK creates a stack, pushes 0 onto it, and then subtracts 128 words -- so the resulting address (which is then used to calculate the CALL 5 jump) isn't paragraph-aligned. It was still like that in the DEBUG.COM that came with Windows 10 x86, last time I checked.
+Simplest fix is to insert a couple of INC AX at line 256 in the published source. Sadly, I don't think Microsoft are accepting patches to MSDOS 2.0...Read moreThis is connected to the long-standing bug with PSPs created by DEBUG where the CALL 5 points to the wrong place – the code at SAVSTK creates a stack, pushes 0 onto it, and then subtracts 128 words — so the resulting address (which is then used to calculate the CALL 5 jump) isn’t paragraph-aligned. It was still like that in the DEBUG.COM that came with Windows 10 x86, last time I checked.
+Simplest fix is to insert a couple of INC AX at line 256 in the published source. Sadly, I don’t think Microsoft are accepting patches to MSDOS 2.0 any more…
+Read less
+
+
+
+
+
+
+
+Jim Nelson  March 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+For an interesting look at the PSP, call 0005h, the A20 line, and how MS-DOS attempted to emulate CP/M back in the day, check out http://www.os2museum.com/wp/who-needs-the-address-wraparound-anyway/
+Of particular interest is interrupt 30h, which DOS overwrote with code to support call 0005h and offset 06h (which CP/M’s page zero used to indicate the top of program memory).  This is why Ralf Brown’s interrupt list has NOT A VECTOR! for interrupt 30h (http://www.ctyme.com/intr/int-30.htm)
+
+
+
+
+
+Antonio Rodríguez  March 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+If a known bug has been around for nearly 40 years, chances are that someone is relying on it.
+
+
+
+
+
+R Wells  March 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+Or no one for the previous 40 years was developing an application using Call 5 on MSDOS 2 or later and having to debug it with DEBUG.
+
+
+
+Pierre Baillargeon  March 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+The reason to put int 20h at zero may also to cover calling through a null function pointer.
+IIRC, the Amiga had nothing at address zero for this reason. (And also so that writing through a null pointer was less likely to corrupt something important. The Motorola 68000 didn't have memory protection.) Amusingly, the Amiga also had a very important piece of data at address 4, the pointer to the kernel entry point. (Well, technically, the address of the SharedLibrary structure for the kernel shared library. One of the early thing a program would do would be to get the kernel...Read moreThe reason to put int 20h at zero may also to cover calling through a null function pointer.
+IIRC, the Amiga had nothing at address zero for this reason. (And also so that writing through a null pointer was less likely to corrupt something important. The Motorola 68000 didn’t have memory protection.) Amusingly, the Amiga also had a very important piece of data at address 4, the pointer to the kernel entry point. (Well, technically, the address of the SharedLibrary structure for the kernel shared library. One of the early thing a program would do would be to get the kernel library, since loading other libraries required the LoadLibrary function from the kernel. Obviously, LoadLibrary could not be called to get the kernel, so it had to be at a known adddress. Why so close to a dangerous one though? Oh well…)
+Read less
+
+
+
+
+
+
+
+David Walker  March 10, 2020
+
+
+  0  Collapse this comment
+Copy link
+“The Amiga had nothing” at address zero?  The bits weren’t there, or there was a black hole, or what?  How can there be “nothing” at a given address?
+
+
+
+
+
+Tuomas Tynkkynen  March 12, 2020
+
+
+  0  Collapse this comment
+Copy link
+As others corrected, Amiga having “nothing” at address zero is not really correct, but here is simplified explanation of how “nothing” can be at a given address:
+When a CPU does a read, it puts out the address it wants to read from on the address pins of the CPU chip. Then every other chip connected to the bus (like ROM or RAM chip) will look at the address to decide if the address belongs to them; if it does then the chip will put out the data on the data pins of that chip. Now, it is possible that no...Read moreAs others corrected, Amiga having “nothing” at address zero is not really correct, but here is simplified explanation of how “nothing” can be at a given address:
+When a CPU does a read, it puts out the address it wants to read from on the address pins of the CPU chip. Then every other chip connected to the bus (like ROM or RAM chip) will look at the address to decide if the address belongs to them; if it does then the chip will put out the data on the data pins of that chip. Now, it is possible that no chip decides that the address belongs to them (and no-one puts anything on the data bus).
+What then happens is unpredictable – I think some platforms will cause the CPU to read all zeroes (or ones), some may have the CPU read the latest value that was placed on the data bus. Or on some platforms, the bus has an extra acknowledgement signal that the ROM/RAM chip is supposed to put up to indicate that the value on the data bus is now correct… and if no device raises the ack signal, the CPU will hang waiting for it forever. Even today I work with platforms where reading from invalid addresses will cause the CPU core (or sometimes the entire system) to lock up.
+Read less
+
+
+
+
+
+
+
+Muzer  March 11, 2020
+
+
+  0  Collapse this comment
+Copy link
+Should probably read “nothing important”. I think it was mapped to a piece of RAM or ROM (I forget which) which isn’t used by anything.
+EDIT: Though having said that, I just looked it up and it turns out the first exception vector is stored in address 0 – but this is only used during a power on or a reset so is unlikely to be a problem. Address 4 was the second exception vector so that makes sense that it pointed to the kernel.
+
+
+
+
+
+smf  March 11, 2020
+
+
+  0  Collapse this comment
+Copy link
+Address 0 is where the 68000 fetches the stack pointer during reset.
+Address 4 is where it fetches the program counter during reset.
+However during reset the Kickstart ROM is mirrored at location $0 so the values can be fetched & is then switched out quite quickly so that RAM appears there.
+Once the Amiga has booted then Address 4 is where the address of exec base is stored. You won't get very far executing it, because it's a pointer to a data structure. There is a jump table which is used for calling functions in the library, but they are at...Read moreAddress 0 is where the 68000 fetches the stack pointer during reset.
+Address 4 is where it fetches the program counter during reset.
+However during reset the Kickstart ROM is mirrored at location $0 so the values can be fetched & is then switched out quite quickly so that RAM appears there.
+Once the Amiga has booted then Address 4 is where the address of exec base is stored. You won’t get very far executing it, because it’s a pointer to a data structure. There is a jump table which is used for calling functions in the library, but they are at negative offsets from the library base pointer.
+It has to be in the first 64k so that you can use short addresses (move.l 4.w,a6), it makes sense to put it at the beginning to avoid wasting ram. Location 0 was probably avoided so that null strings would work if something didn’t bother to check for null, but there is no guarantee that it does contain 0.
+Read less
+
+
+
+
+
+Alexis Ryan  March 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+a Very Old new thing. I always find details of how MS-DOS fascinating

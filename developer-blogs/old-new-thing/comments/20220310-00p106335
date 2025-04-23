@@ -1,0 +1,130 @@
+Adam Rosenfield  March 11, 2022
+
+
+  0  Collapse this comment
+Copy link
+> I’m going to limit myself to SSE2, since that’s the minimum requirement for x86-based Windows starting with Windows 8.
+There’s also the option of detecting the CPU’s features at runtime and using an SSE3/SSE4/AVX/AVX2 implementation if those are supported, but of course you still need to keep the SSE2 version for compatibility in the worst case.
+
+
+
+
+
+MGetz  March 14, 2022
+
+
+  0  Collapse this comment
+Copy link
+Doesn’t actually work believe it or not, you can thank Intel for this one too. As I mentioned in my comment the PS/PG lineup has AVX turned off. However that doesn’t extend to the cpuid instruction on the skylake versions of those chips which incorrectly report they support AVX2 because the upstream part does. How this made it out I don’t know or why Intel thought it was a good idea to remove AVX2 from something that should by rights have it I’ll never know.
+
+
+
+
+
+Adam Rosenfield  March 14, 2022
+
+
+  0  Collapse this comment
+Copy link
+That’s a rather baffling decision.  I suppose one could always try out an AVX2 instruction, catch the illegal instruction exception and fall back to another method, but that’s a bit of a kludge.
+
+
+
+
+
+MGetz  March 14, 2022
+
+
+  0  Collapse this comment
+Copy link
+As best I can tell those parts exist so Intel can sell what would otherwise be waste silicon. I'm not actually sure the volumes they move but I've vary rarely come across them here in the US. That doesn't mean they don't exist or cause problems though. The majority of atom parts also don't have AVX but at least they correctly report it. Recently the Diablo 2 Remake had to remove AVX as default. Unfortunately  hasn't been updated to check for anything beyond sse3 either. So you have to actually bugcheck it by doing the CPUID and then if...Read moreAs best I can tell those parts exist so Intel can sell what would otherwise be waste silicon. I’m not actually sure the volumes they move but I’ve vary rarely come across them here in the US. That doesn’t mean they don’t exist or cause problems though. The majority of atom parts also don’t have AVX but at least they correctly report it. Recently the Diablo 2 Remake had to remove AVX as default. Unfortunately IsProcessorFeaturePresent hasn’t been updated to check for anything beyond sse3 either. So you have to actually bugcheck it by doing the CPUID and then if it says AVX and Pentium… you check the known bad list.
+Read less
+
+
+
+
+
+jokoe  March 10, 2022
+
+
+  0  Collapse this comment
+Copy link
+this code is also a good example for a buffer-overrun:
+If your pixels are not a multiple of 4, you are overwriting some memory that dont belong to you.
+
+
+
+
+
+Raymond Chen Author
+March 11, 2022
+
+
+  0  Collapse this comment
+Copy link
+See the paragraph that begins “For simplicity of exposition.” The prerequisites happen to be met in my scenario because the pixels came from a DIB section, which is page-aligned and page-granular.
+
+
+
+
+
+Falcon  March 10, 2022
+
+
+  0  Collapse this comment
+Copy link
+The article specifically calls out that this is NOT the case. I’m guessing the code posted here is intended for demonstration purposes, rather than a complete solution to be copy-pasted as is.
+
+
+
+
+jokoe  March 10, 2022
+
+
+  0  Collapse this comment
+Copy link
+in your code example, you store lightness in a variable named lightness128.
+But in the multiplication you use an undefine variable alpha128.
+That wont work ...
+also I would reshuffle the instructions a bit so that processor can take advantage of multiple ALUs.
+ auto zero = _mm_setzero_si128()
+ for (auto pixels = (__m128i*)first; pixels < end; pixels++) {
+    auto val = _mm_loadu_si128(pixels);
+    auto vlo = _mm_unpacklo_epi8(val, zero);
+    auto vhi = _mm_unpackhi_epi8(val, zero);
+    vlo = _mm_mullo_epi16(vlo, lightness128);
+    vhi = _mm_mullo_epi16(vhi, lightness128);
+...Read morein your code example, you store lightness in a variable named lightness128.
+But in the multiplication you use an undefine variable alpha128.
+That wont work …
+also I would reshuffle the instructions a bit so that processor can take advantage of multiple ALUs.
+ auto zero = _mm_setzero_si128()
+ for (auto pixels = (__m128i*)first; pixels < end; pixels++) {
+    auto val = _mm_loadu_si128(pixels);
+    auto vlo = _mm_unpacklo_epi8(val, zero);
+    auto vhi = _mm_unpackhi_epi8(val, zero);
+    vlo = _mm_mullo_epi16(vlo, lightness128);
+    vhi = _mm_mullo_epi16(vhi, lightness128);
+    vlo = _mm_srli_epi16(vlo, 8);
+    vhi = _mm_srli_epi16(vhi, 8);
+    val = _mm_packus_epi16(vlo, vhi);
+   _mm_storeu_si128(pixels, val);
+  }
+Read less
+
+
+
+
+
+
+
+MGetz  March 10, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Note to anyone thinking Raymond should have used AVX: AVX isn't available on all intel processors even brand new ones. The Pentium gold/silver line notoriously doesn't have them (despite Atom chips having it). This means that if you intend to support as many users as possible for a library that would need to be general purpose and not intended only for higher end hardware you're limited to SSE-SSE4.1. That should support at least awhile back without being too restrictive.
+Edit: It looks like intel is finally changing this.. the new Pentium gold 7xxx series does finally support: AVX2 and nothing beyond.
+Read moreNote to anyone thinking Raymond should have used AVX: AVX isn’t available on all intel processors even brand new ones. The Pentium gold/silver line notoriously doesn’t have them (despite Atom chips having it). This means that if you intend to support as many users as possible for a library that would need to be general purpose and not intended only for higher end hardware you’re limited to SSE-SSE4.1. That should support at least awhile back without being too restrictive.
+Edit: It looks like intel is finally changing this.. the new Pentium gold 7xxx series does finally support: AVX2 and nothing beyond.
+Read less

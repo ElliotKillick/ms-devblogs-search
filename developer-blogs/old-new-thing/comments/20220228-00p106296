@@ -1,0 +1,205 @@
+Doug Cook  February 28, 2022
+
+
+  0  Collapse this comment
+Copy link
+Recent discussion on this topic in the C++ standards committee: C++ exceptions are becoming more and more problematic.
+
+
+
+
+
+MGetz  March 2, 2022
+
+
+  0  Collapse this comment
+Copy link
+It's worth noting that the standards committee members I've discussed that paper with are well... less than complementary of the conclusions reached. The author started out with the premise that exceptions were bad and then specifically set up a test case that was not realistic or would ever actually be used with exceptions to prove their point. In otherwords: They created a situation where exceptions were used for control flow and not for... well exceptional things. That's not to say there don't need to be other options. But to also say that  is a bad solution because of unoptimized...Read moreIt’s worth noting that the standards committee members I’ve discussed that paper with are well… less than complementary of the conclusions reached. The author started out with the premise that exceptions were bad and then specifically set up a test case that was not realistic or would ever actually be used with exceptions to prove their point. In otherwords: They created a situation where exceptions were used for control flow and not for… well exceptional things. That’s not to say there don’t need to be other options. But to also say that std::expected is a bad solution because of unoptimized codegen is also silly. That’s like saying that something that’s not yet standardized yet should somehow be super fast even though it’s a prototype itself.
+Let it suffice that the paper likely won’t be affecting anything because it doesn’t actually show anything of value that people didn’t already know: Using exceptions for control flow is bad. That is not the intent of them. If you have something you’re expecting failure from… set up a pattern where the failure must be checked (std::expected or std::variant). Don’t use things that have a cost in hot paths. None of this is new, and none of  it is surprising. It’s just silly that an author went out of their way to write that kind of hit piece in this day in age.
+Read less
+
+
+
+
+
+
+
+紅樓鍮  March 2, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Whether or not that specific paper is contrived, the real problem is that exceptions incur way too high an overhead than needed to achieve the same utility value.
+C++ boasts the "zero-overhead principle".  Exceptions in today's shape are not even remotely zero-overhead.
+If  is found to generate the most efficient code among all error-handling solutions, it doesn't mean exceptions should henceforth be relegated to the so-called "performance-insensitive code paths".  It means exceptions should be changed to generate the same code as  does.  All code paths, hot or cold, should use the most efficient form of error handling...Read moreWhether or not that specific paper is contrived, the real problem is that exceptions incur way too high an overhead than needed to achieve the same utility value.
+C++ boasts the “zero-overhead principle”.  Exceptions in today’s shape are not even remotely zero-overhead.
+If std::expected is found to generate the most efficient code among all error-handling solutions, it doesn’t mean exceptions should henceforth be relegated to the so-called “performance-insensitive code paths”.  It means exceptions should be changed to generate the same code as std::expected does.  All code paths, hot or cold, should use the most efficient form of error handling available, unironically, just because we can.
+We can’t ditch exceptions wherever we please because it’s the only available form of error reporting for constructors and overloaded operators, and because many std APIs already use exceptions.
+Read less
+
+
+
+
+
+
+
+MGetz  March 2, 2022
+
+
+  0  Collapse this comment
+Copy link
+> We can’t ditch exceptions because it’s the only available form of error reporting for constructors and overloaded operators, and because many std APIs already use exceptions.
+NGL, if you have a constructor that throws you already have potential issues.  and its codegen can't solve the fact that there are serious hazards in the standard itself around this. The goal of any object in a constructor should be to get to a known state as soon as possible without throwing. Because reminder: partial construction results in zero destruction because the lifetime hasn't started yet!
+Honestly my comment was more about people...Read more> We can’t ditch exceptions because it’s the only available form of error reporting for constructors and overloaded operators, and because many std APIs already use exceptions.
+NGL, if you have a constructor that throws you already have potential issues. std::expected and its codegen can’t solve the fact that there are serious hazards in the standard itself around this. The goal of any object in a constructor should be to get to a known state as soon as possible without throwing. Because reminder: partial construction results in zero destruction because the lifetime hasn’t started yet!
+Honestly my comment was more about people linking to a paper that is… not great under any circumstances and basically serves only to go “C++ bad” without offering any valid alternatives like std::expected or herbceptions did. But saying that exceptions can and should be optimized for running on 256 cores doesn’t make sense. That’s like saying that a lock is slow because it has contention… of course it does, fix the fact it’s being misused rather than complaining the lock is slow. But optimizing exceptions from the ‘zero cost’ model Raymond mentions above to what the paper proposes is not ‘zero cost’ at all and has significant other impacts. Not including the major ABI break issues.
+Read less
+
+
+
+
+
+
+
+Tim Weis  March 5, 2022
+
+
+  0  Collapse this comment
+Copy link
+> Because reminder: partial construction results in zero destruction because the lifetime hasn’t started yet!
+That's not correct. From throw expression:
+If an exception is thrown from a constructor [...], destructors are called for all fully-constructed non-static [...] members and base classes, in reverse order of completion of their constructors.
+That's what allows RAII types to be composed into other RAII types. And it is, quite obviously, very different from "zero destruction". Everything gets properly cleaned up when control leaves a constructor by way of a C++ exception.
+Read more> Because reminder: partial construction results in zero destruction because the lifetime hasn’t started yet!
+That’s not correct. From throw expression:
+If an exception is thrown from a constructor […], destructors are called for all fully-constructed non-static […] members and base classes, in reverse order of completion of their constructors.
+That’s what allows RAII types to be composed into other RAII types. And it is, quite obviously, very different from “zero destruction”. Everything gets properly cleaned up when control leaves a constructor by way of a C++ exception.
+Read less
+
+
+
+
+
+
+
+紅樓鍮  March 2, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+I fail to see how zero-destruction is a problem.
+Consider the  class.  In its current form, constructing a running  may throw due to failure to create a thread.  Now suppose we change the postcondition on that constructor to say "the constructed object is guaranteed to be in a valid state, but may not represent a running thread".  What valid state should we assign to the failure case?  The only reasonable answer would be the detached (empty) state, and in that case the destructor already does nothing!
+In general, failure to construct an object of an RAII...Read moreI fail to see how zero-destruction is a problem.
+Consider the std::thread class.  In its current form, constructing a running std::thread may throw due to failure to create a thread.  Now suppose we change the postcondition on that constructor to say “the constructed object is guaranteed to be in a valid state, but may not represent a running thread”.  What valid state should we assign to the failure case?  The only reasonable answer would be the detached (empty) state, and in that case the destructor already does nothing!
+In general, failure to construct an object of an RAII type indicates failure to acquire resource, and thus zero-destruction has the desired semantics.
+Read less
+
+
+
+
+
+
+
+紅樓鍮  March 2, 2022
+
+
+  0  Collapse this comment
+Copy link
+Maybe they should just have linked herbceptions directly.
+
+
+
+
+Ian Yates  March 1, 2022
+
+
+  0  Collapse this comment
+Copy link
+Thanks for sharing. Fascinating discussion of the options there.
+
+
+
+
+Ben Craig  February 28, 2022
+
+
+  0  Collapse this comment
+Copy link
+Note that the lost optimization opportunities are generally only “lost” when compared to terminate based semantics.  If your program used return values or in/out parameters for error handling, then you’d still need to spill things that need to be used in the sad path.
+Now, it may be the case that today’s compilers don’t peek into catch blocks enough to do the same kinds of optimizations that they could do with the “else” of a return value branch.  I totally believe that is true, but it isn’t an inherent weakness.
+
+
+
+
+
+Raymond Chen Author
+February 28, 2022
+
+
+  0  Collapse this comment
+Copy link
+It wouldn’t necessarily need to spill them. The return value pattern could just destruct the value while it’s still in registers.
+
+
+
+
+
+Ben Craig  February 28, 2022
+
+
+  0  Collapse this comment
+Copy link
+If you can use things still in registers across a function call, that means the values are in callee-saved / "non-volatile" registers.  The unwinding process can restore these callee-saved registers for use in the exception handler.  You only end up spilling if the callee ends up using the register, but that's a spill in the callee, and that's the normal case.
+However, compilers seem reluctant to use callee-saved registers, even when exceptions aren't even a concern.  https://godbolt.org/z/ox44v6YTx
+GCC, MSVC x64, and MSVC ARM64 all use caller-saved / volatile registers, even when /EHs- or -fno-exceptions are specified, or when calling...Read moreIf you can use things still in registers across a function call, that means the values are in callee-saved / “non-volatile” registers.  The unwinding process can restore these callee-saved registers for use in the exception handler.  You only end up spilling if the callee ends up using the register, but that’s a spill in the callee, and that’s the normal case.
+However, compilers seem reluctant to use callee-saved registers, even when exceptions aren’t even a concern.  https://godbolt.org/z/ox44v6YTx
+GCC, MSVC x64, and MSVC ARM64 all use caller-saved / volatile registers, even when /EHs- or -fno-exceptions are specified, or when calling across a noexcept function.
+Maybe if the function used more local storage and it happened to use a callee-saved register, you might end up seeing spills in one build variant, but not the other.  I don’t think those are cases of “it’s impossible to optimize this”, just a case of “haven’t optimized it yet”.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+March 1, 2022
+
+
+  0  Collapse this comment
+Copy link
+Sorry, I misremembered. It was really about reordering operations across a non-throwing function call.
+
+
+
+
+
+Ben Craig  March 1, 2022
+
+
+  0  Collapse this comment
+Copy link
+Hmm, yeah, that’s an optimization that would be a lot harder to reclaim.  Maybe you could undo a reordered operation in the exception handler, but that would be some serious heroics.
+
+
+
+Almighty Toomre  February 28, 2022
+
+
+  0  Collapse this comment
+Copy link
+Fun anecdote about exceptions adding constraints to a compiler: I worked on a then-popular system where the compiler could either generate code that uses threads, or have exceptions work correctly. If you tried to use both, the resulting code would (eventually) crash.
+The project I was porting used both threads and exceptions; we had to figure out how to stop using one or the other.
+
+
+
+
+
+紅樓鍮  February 28, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+What’s the reason behind C++ coroutines forbidding suspension points inside catch blocks (which C# appears to allow)?  My guess is that it may have to do with having to store the exception object on the coroutine frame, and still arrange for std::current_exception and friends to behave “sensibly”?
+Anyway, it seems that the presence of std::current_exception et al. plays a crucial role in making it exceptionally difficult to optimize exception code (as mentioned in Sutter’s exception paper).

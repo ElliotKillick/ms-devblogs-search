@@ -1,0 +1,70 @@
+Yiannis Papadopoulos  May 13, 2019
+
+
+  0  Collapse this comment
+Copy link
+I faced the same problem in a C++-based runtime system. I ended up using annotation based on ownership of the object passed to the operation.
+The runtime was doing aggregation of async requests transparently (since some ended up being serialized and sent across the wire), so I had to manage very carefully and unambiguously what happens to objects passed to an operation.
+I went down the path of Uniqueness and Reference Immutability for Safe Parallelism. If you express ownership through the type system, then you can avoid the kinks of async operations rather painlessly.
+It was roughly like this:
+-...Read moreI faced the same problem in a C++-based runtime system. I ended up using annotation based on ownership of the object passed to the operation.
+The runtime was doing aggregation of async requests transparently (since some ended up being serialized and sent across the wire), so I had to manage very carefully and unambiguously what happens to objects passed to an operation.
+I went down the path of Uniqueness and Reference Immutability for Safe Parallelism. If you express ownership through the type system, then you can avoid the kinks of async operations rather painlessly.
+It was roughly like this:
+– The caller controls the ownership of an object passed as an argument to an operation.
+– For any regular object, the caller is guaranteed that all operations have no side-effects on the objects passed to the operation.
+– The callee controls the constness its parameters; an argument can be mutated if it is mutable (i.e., non-const), but the caller shall not see any mutation on the argument.
+– If the operation is sync: if the callee accepts an immutable object (i.e., const reference), then a copy is not needed. If the callee accepts a mutable object (i.e., reference, or by value) then a copy needs to be made.
+– If the operation is async: a copy is always made, unless the caller relinquishes ownership (i.e., moves the object) or temporarily says that the object will be immutable until the next synchronization point.
+– Async-async operations (i.e., aggregated async operations that are invoked later than expected): they’re just regular async operations.
+Reference: STAPL-RTS: An Application Driven Runtime System
+Read less
+
+
+
+
+
+
+
+Tautvydas Žilys  May 3, 2019
+
+
+  0  Collapse this comment
+Copy link
+Whoa, this is surprising! Does that mean you can’t pass in place constructed HSTRING references, like so?
+ComPtr<IAsyncOperation<StorageFolder*>> operation;hr = storageFolderStatics->GetFolderFromPathAsync(HStringReference(“D:\\path\\to\\my\\\file.txt”).Get(), &operation);
+….
+
+
+
+
+
+Raymond Chen Author
+May 3, 2019
+
+
+  0  Collapse this comment
+Copy link
+That’s okay, because the async operation will do a WindowsDuplicateString to extend the lifetime of the HSTRING, the same way it calls AddRef to extend the lifetime of any COM objects.
+
+
+
+
+Henrik Andersson  May 1, 2019
+
+
+  0  Collapse this comment
+Copy link
+Huh. I would’ve expected the opposite issue. The parameter being changed after perfoming the async call and the async method being able to notice the change becuase it was slower than the caller. But with async-async you’d be capturing a serialized copy, not a reference, to the argument object.
+
+
+
+
+
+Raymond Chen Author
+May 1, 2019
+
+
+  0  Collapse this comment
+Copy link
+In many cases, you really do want a reference. For example, serializing a random access stream would be wrong (writes would be lost). Or the parameter could have references to unserializable objects, like a network connection. Or it could be part of a complex web of objects, possibly with circular references, like an audio graph.

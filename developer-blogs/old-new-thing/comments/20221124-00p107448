@@ -1,0 +1,192 @@
+Neil Rashbrook  November 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+Another approach that could have been used is that you pass a JavaScript object to the method, and a specific property gets filled in with the output.
+
+
+
+
+
+Solomon Ucko  December 1, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+In fact, I think all 4 options (output reference, return object, return tuple, return hybrid object/tuple) could work for any of the languages:
+Read moreIn fact, I think all 4 options (output reference, return object, return tuple, return hybrid object/tuple) could work for any of the languages:
+
+C#: out, readonly record struct, tuple with implicit field names, tuple with explicit field names
+Visual Basic: <Out()> ByRef, Structure, tuple, named tuple
+C++: &, struct, std::tuple, specialize std::tuple_size and std::tuple_element
+Rust: &mut, struct, (A, B, …), impl From<ReturnStruct> for (A, B, …)
+JavaScript: caller passes object and callee sets field value, {...}, array, array or other iterable object with fields/properties set
+Python: caller passes object and callee sets field value, dataclass, tuple, namedtuple
+
+Read less
+
+
+
+
+
+
+Mike Makarov  November 24, 2022
+
+
+  0  Collapse this comment
+Copy link
+I think dotnet marshaller can do a similar thing: if there is a WinAPI method that is
+HRESULT DoSomething(T1 a, T2 b, out T3 x)
+you can declare it as
+extern T3 DoSomething(T1 a, T2 b)
+and it will work.
+
+
+
+
+
+GL  November 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+That would make it a double signature translation. I believe the signature A B(out C d); is managed and already means ABI of HRESULT B([out] C *d, [out, retval] A *result);.
+
+
+
+
+Dan Bugglin  November 24, 2022
+
+
+  0  Collapse this comment
+Copy link
+I'm curious why C# does not use nullables for Try* functions. My guesses are:
+1. Nullables didn't exist in the .NET version where the Try* standard was established (I didn't cheat and look up when nullables were introduced, but they are generic which wasn't introduced until 2.0 I believe).
+2. Using a nullable or tuple would result in memory allocation or otherwise poorer performance rather than just using a boolean and an out parameter.
+3. What if you had a Try* actually fetching a nullable (for example, Dictionary can have any type of values you want), then you'd have a nullable...Read moreI’m curious why C# does not use nullables for Try* functions. My guesses are:
+1. Nullables didn’t exist in the .NET version where the Try* standard was established (I didn’t cheat and look up when nullables were introduced, but they are generic which wasn’t introduced until 2.0 I believe).
+2. Using a nullable or tuple would result in memory allocation or otherwise poorer performance rather than just using a boolean and an out parameter.
+3. What if you had a Try* actually fetching a nullable (for example, Dictionary can have any type of values you want), then you’d have a nullable nullable, that would be awkward.
+Read less
+
+
+
+
+
+
+
+GL  November 25, 2022
+
+
+  1  Collapse this comment
+Copy link
+Because there’s no guarantee that the semantics of the output of a Windows Runtime method bool TryAbc(out int xyz) are either (false, irrelevant) or (true, relevant) — it could well be (false, relevant) and (true, irrelevant).
+
+
+
+
+
+Markus Schaber  November 24, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+The way the try functions work allow for elegant code like this:
+if (bool.TryParse(args[1], out var value) && value)
+    DoSomething();
+Or this one:
+if (!bool.TryParse(args[1], out var value))
+    throw new SomeException()
+
+DoSomethingWith(value);
+
+
+
+
+
+Richard Deeming  November 25, 2022
+
+
+  0  Collapse this comment
+Copy link
+But with recent advances to the C# language, a nullable-returning version would let you do:
+if (bool.TryParse(args[1]) is true)
+    DoSomething();
+Or:
+if (bool.TryParse(args[1]) is not {} value)
+    throw new SomeException();
+
+DoSomethingWith(value);
+
+
+
+
+
+Oisin Grehan  November 29, 2022
+
+
+  0  Collapse this comment
+Copy link
+This is not correct. Your code is testing whether or not the TryParse succeeded when the goal is to test the result of the conversion.
+
+
+
+
+
+Richard Deeming  November 30, 2022
+
+
+  0  Collapse this comment
+Copy link
+My code is intended to illustrate how calling the *hypothetical* null-returning versions would compare to calling the *real* versions shown in Markus's post.
+It's slightly clouded by the fact that it's `bool.TryParse` that's being called; it's easy to confuse the *"returned true because the parse succeeded"* result of the real method with the *"returned true because the parse succeeded and the parsed value was true"* of the hypothetical method.
+Perhaps using the hypothetical version of `int.TryParse` might make it clearer:
+<code>
+Or:
+<code>
+Read moreMy code is intended to illustrate how calling the *hypothetical* null-returning versions would compare to calling the *real* versions shown in Markus’s post.
+It’s slightly clouded by the fact that it’s `bool.TryParse` that’s being called; it’s easy to confuse the *”returned true because the parse succeeded”* result of the real method with the *”returned true because the parse succeeded and the parsed value was true”* of the hypothetical method.
+Perhaps using the hypothetical version of `int.TryParse` might make it clearer:
+// Real version:
+if (int.TryParse(args[2], out int i))
+    DoSomethingWith(i);
+
+// Hypothetical version:
+if (int.TryParse(args[2]) is {} i)
+    DoSomethingWith(i);
+Or:
+// Real version:
+if (!int.TryParse(args[2], out int i))
+    throw new SomeException();
+
+DoSomethingWith(i);
+
+// Hypothetical version:
+if (int.TryParse(args[2]) is not {} i)
+    throw new SomeException();
+
+DoSomethingWith(i);
+Read less
+
+
+
+
+
+Igor Tandetnik  November 24, 2022
+
+
+  1  Collapse this comment
+Copy link
+What happens if there’s an `out` parameter named `result`?
+
+
+
+
+
+Dan Bugglin  November 24, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+My guess? That’s a problem for the programmer who has to port the API from C# to JS/Python.

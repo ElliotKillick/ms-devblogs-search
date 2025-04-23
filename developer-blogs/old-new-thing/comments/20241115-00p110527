@@ -1,0 +1,154 @@
+Maxime Casas  November 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+This is a clever trick.
+It got me wondering: in what situations does one want to put a non-copiable non-movable object into a std::optional by value?
+Most such objects I have seen in C++ were used to represent objects with an "identity", such as widgets just like in your example, and were only manipulated by pointer/reference. But when put by value inside an optional, it becomes impossible to move the object out of the optional containing the object returned by the factory method. Does it mean the code calling the factory has to keep the widget (to reuse your widget example) inside...Read moreThis is a clever trick.
+It got me wondering: in what situations does one want to put a non-copiable non-movable object into a std::optional by value?
+Most such objects I have seen in C++ were used to represent objects with an “identity”, such as widgets just like in your example, and were only manipulated by pointer/reference. But when put by value inside an optional, it becomes impossible to move the object out of the optional containing the object returned by the factory method. Does it mean the code calling the factory has to keep the widget (to reuse your widget example) inside the optional throughout the entire lifetime of the newly constructed widget?
+Thanks
+Read less
+
+
+
+
+
+
+
+BENOIT Frederic  November 19, 2024
+
+
+  0  Collapse this comment
+Copy link
+Wait, functions can actually return non-movable, non-copyable objects?
+
+
+
+
+
+Weiß  November 17, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+Does that true mean “initially enabled”? Does it mean “inside”? Does it mean “outside”?
+To remove ambiguity, we can switch to factory methods.
+Could've just replaced the bool with a scoped enum, no? ;)
+Even if two separate function definitions are desired, overload resolution seems more fitting than the solution described above:
+<code>
+Or shorter yet:
+<code>
+I end up believing that the use of factory methods instead of constructors is the root of all evil here. It might be nice to have 'named' constructors like this, but that could complicate a lot of other things.
+Read moreDoes that true mean “initially enabled”? Does it mean “inside”? Does it mean “outside”?
+To remove ambiguity, we can switch to factory methods.
+Could’ve just replaced the bool with a scoped enum, no? 😉
+Even if two separate function definitions are desired, overload resolution seems more fitting than the solution described above:
+class Region;
+class Widget {
+public:
+    static const struct inside {} inside;
+    static const struct outside {} outside;
+
+    // inside, outside parameters are only used for function resolution, otherwise ignored
+    Widget(Region const&, struct inside) {}
+    Widget(Region const&, struct outside) {}
+private:
+    /* ... */
+};
+
+void foo(Region const& r) {
+    // Construct like this, analogous to enum:
+    Widget wi {reg, Widget::inside};
+    Widget wo {reg, Widget::outside};
+
+    // works for optional as well...
+    std::optional opt {std::in_place, reg, Widget::inside};
+    opt.emplace(reg, Widget::outside);
+}
+Or shorter yet:
+class Widget {
+public:
+    struct inside { region const& r; };
+    struct outside { region const& r; };
+
+    Widget(inside) {/* ... */ }
+    Widget(outside) { /* ... */}
+private:
+    /* ... */
+};
+
+// call with ...
+Widget w {Widget::inside {region}};
+opt.emplace(Widget::outside {region});
+I end up believing that the use of factory methods instead of constructors is the root of all evil here. It might be nice to have ‘named’ constructors like this, but that could complicate a lot of other things.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+November 17, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+The enum works only if the Inside and Outside constructors take identical parameters. If they take different parameters, then you run into trouble. E.g.
+enum Placement { Above, Below };
+
+Widget(Region const& region); /* create widget inside */
+Widget(Region const& region, Placement placement); /* create a widget outside, with placement */
+
+. A enum WidgetPlacement { Inside, Outside } forces you into adding a dummy placement parameter to the inside version.
+
+
+
+
+
+Weiß  November 18, 2024
+
+
+  0  Collapse this comment
+Copy link
+Thank you for the response!
+But if your separate case constructors already have differing signatures, then is there really any ambiguity to be removed by adding factory methods? Does this ambiguity justify the complexity of the described solution (for emplacing an object with no public constructors)?
+Of course my point is moot if the class in question is part of a static API. In which case using a template proxy type with an implicit conversion operator deferring to the factory is an elegant solution.
+But if not, and ambiguity is really the only issue, I would at least consider packaging your parameters...Read moreThank you for the response!
+But if your separate case constructors already have differing signatures, then is there really any ambiguity to be removed by adding factory methods? Does this ambiguity justify the complexity of the described solution (for emplacing an object with no public constructors)?
+Of course my point is moot if the class in question is part of a static API. In which case using a template proxy type with an implicit conversion operator deferring to the factory is an elegant solution.
+But if not, and ambiguity is really the only issue, I would at least consider packaging your parameters in named, nested types that are trivial to construct
+struct Widget::Inside { 
+    Region const& region; 
+}
+struct Widget::Outside { 
+    Region const& region; 
+    Placement placement; 
+    std::string_view name;
+    /* whatever data might be desired... */
+}
+// constructors like this
+Widget(Inside);
+Widget(Outside);
+// emplace works as intended
+opt.emplace(Widget::Inside {region});
+Name design aside, is this not an improvement over
+o.emplace(EmplaceHelper([&] {
+    return Widget::CreateInside(region);
+}));
+?
+Read less
+
+
+
+
+
+LB  November 15, 2024
+
+
+  0  Collapse this comment
+Copy link
+Clever, I wouldn’t have thought to utilize conversions and RVO for this!

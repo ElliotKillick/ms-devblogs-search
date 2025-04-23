@@ -1,0 +1,80 @@
+Zura For Reg  March 10, 2025
+
+
+  0  Collapse this comment
+Copy link
+@Raymond Chen
+Off-topic: commenting here since the discussion is closed in some older posts about Windows 7 calculator. Could you please mention what UI API is used for “Worksheets > Mortgage” and similar panels? In the Win7 calc.exe which is a native Win32 app as I can tell. Thank you!
+
+
+
+
+
+Matt McCutchen  March 7, 2025
+· Edited
+
+  0  Collapse this comment
+Copy link
+So as far as  knows, it's constructing a standalone  object, but really it's constructing the  sub-object of a  in place.  That's wild.  I'm curious if there are cases in which this abstraction leaks or fails altogether.  If the  constructor calls a virtual method, it will use the  vtable, but that's consistent with the normal C++ rule for vtables of sub-objects during construction.  If  has a virtual base, the optimization can't work in general because the sub-object might have a different layout from the standalone object; there's some further discussion...Read moreSo as far as ChooseWidgetBase knows, it’s constructing a standalone WidgetBase object, but really it’s constructing the WidgetBase sub-object of a Widget in place.  That’s wild.  I’m curious if there are cases in which this abstraction leaks or fails altogether.  If the WidgetBase constructor calls a virtual method, it will use the WidgetBase vtable, but that’s consistent with the normal C++ rule for vtables of sub-objects during construction.  If WidgetBase has a virtual base, the optimization can’t work in general because the sub-object might have a different layout from the standalone object; there’s some further discussion in this Clang issue thread.  Can anyone think of other interesting cases?
+Update (2025-03-08): I realize that probably the right way to think about copy elision for base subobjects is that the ChooseWidgetBase is constructing a standalone WidgetBase object until the moment it returns and the WidgetBase is incorporated into the Widget via copy elision.  Hence, if there were any behavior differences between standalone construction and subobject construction, they would be intentional from the language’s point of view.  Of course, a programmer who is considering using copy elision as an alternative to a normal subobject constructor call would want to know about any behavior differences, so my curiosity about them stands.
+Read less
+
+
+
+
+
+
+
+GL  March 8, 2025
+
+
+  0  Collapse this comment
+Copy link
+In LLVM bug 34516, according to Richard Smith, this is a bug in standard wording and "guaranteed copy elision" cannot be applied to base subobjects because of layout difference. So your concern of virtual base is very valid.
+I think (1) either the current standard truly wants to require guaranteed copy elision for base subobjects, in which case any function returning a class object with a virtual base must know whether it's returning a most derived object or a base subobject (e.g., with a hidden flag or smuggling some information into the target storage pointer), (2) or guaranteed copy elision is...Read moreIn LLVM bug 34516, according to Richard Smith, this is a bug in standard wording and “guaranteed copy elision” cannot be applied to base subobjects because of layout difference. So your concern of virtual base is very valid.
+I think (1) either the current standard truly wants to require guaranteed copy elision for base subobjects, in which case any function returning a class object with a virtual base must know whether it’s returning a most derived object or a base subobject (e.g., with a hidden flag or smuggling some information into the target storage pointer), (2) or guaranteed copy elision is unintended for base subobjects. Case 1 seems too disruptive for ABI, so it’s unlikely. If it’s case 2, the compiler would be incorrect (per a corrected version of the standard) in accepting the program because even if (optional) copy elision happens, the copy constructor must still be accessible and non-deleted at the point of optimization.
+Read less
+
+
+
+
+
+
+
+Matt McCutchen  March 8, 2025
+· Edited
+
+  0  Collapse this comment
+Copy link
+FWIW to speculate about this here:
+any function returning a class object with a virtual base must know whether it’s returning a most derived object or a base subobject (e.g., with a hidden flag or smuggling some information into the target storage pointer)
+More concretely, the information that  needs in order to construct a subobject is the VTT to pass to the  subobject constructor.   could take an extra parameter that gives the VTT or null to use the standalone constructor.  (That has to be a separate case because the standalone constructor constructs the virtual bases,...Read moreFWIW to speculate about this here:
+any function returning a class object with a virtual base must know whether it’s returning a most derived object or a base subobject (e.g., with a hidden flag or smuggling some information into the target storage pointer)
+More concretely, the information that ChooseWidgetBase needs in order to construct a subobject is the VTT to pass to the WidgetBase subobject constructor.  ChooseWidgetBase could take an extra parameter that gives the VTT or null to use the standalone constructor.  (That has to be a separate case because the standalone constructor constructs the virtual bases, while passing the original WidgetBase VTT to the subobject constructor wouldn’t.)  It seems straightforward, but I may well be missing something.
+Having ChooseWidgetBase not construct the virtual bases when constructing a subobject is a significant behavior difference that seems to abandon any pretense that the feature is just “copy elision”.  And that might be a good conceptual reason not to support it with virtual bases, even if an ABI change were acceptable.
+Read less
+
+
+
+
+
+Ivan Kljajic  March 7, 2025
+
+
+  0  Collapse this comment
+Copy link
+Unrealted maybe, but would letting a little bit of proposed syntactic sugar, like a pretty cast to void around the ternary, be enough to prevent a copy from being generated?
+That way one could just say “x() if cond else y()” without a discard being generated.
+
+
+
+
+
+許恩嘉  March 6, 2025
+
+
+  0  Collapse this comment
+Copy link
+So why doesn’t the standard allow copy elision for the ternary operator?
+One possibility that comes to my mind is that the result of the ternary operator may be used as an lvalue.
+(a==b ? c : d) = 42;

@@ -1,0 +1,106 @@
+Alex Cohn  November 12, 2024
+
+
+  0  Collapse this comment
+Copy link
+A tribute to @michkap 🕯️
+
+
+
+
+
+IS4  November 3, 2024
+
+
+  0  Collapse this comment
+Copy link
+Or just use .NET which has standardized methods for any sort of substring matching. No need to burden the application with an external library when the environment can handle it fine.
+
+
+
+
+
+Raymond Chen Author
+November 3, 2024
+
+
+  1  Collapse this comment
+Copy link
+Surprise! .NET’s culture-sensitive IndexOf calls… FindNLSStringEx!
+
+
+
+
+David Lee  November 1, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+The Windows filesystem seems to treat multiple representations of the same character (composed vs. decomposed, etc.) as different, which can cause a false impression of “having multiple files under the same name” since they tend to render the same in File Explorer.
+It can be argued either way, but macOS seems to normalize strings before hitting the disk. On the other end we also have *nix, which basically treats filesystem paths as opaque byte arrays.
+
+
+
+
+
+Kevin Norris  November 1, 2024
+
+
+  0  Collapse this comment
+Copy link
+All three behaviors are defensible, and they all have issues as well:
+macOS reduces confusion when users enter the same text in multiple different ways (for example, by copying and pasting text from the internet), but there are four different kinds of Unicode normalizations and you would ideally pick one of them for the whole system (Google is giving me conflicting answers as to what macOS actually does, so I'm speaking hypothetically). NFC and NFD are effectively isomorphic to their input (and hence to each other), assuming you don't care about precomposed vs. decomposed characters. NFKD and NFKC lose real code...Read moreAll three behaviors are defensible, and they all have issues as well:
+macOS reduces confusion when users enter the same text in multiple different ways (for example, by copying and pasting text from the internet), but there are four different kinds of Unicode normalizations and you would ideally pick one of them for the whole system (Google is giving me conflicting answers as to what macOS actually does, so I’m speaking hypothetically). NFC and NFD are effectively isomorphic to their input (and hence to each other), assuming you don’t care about precomposed vs. decomposed characters. NFKD and NFKC lose real code point information, so you can argue that NFC and NFD are preferable and you should pick one arbitrarily (you can further argue in favor of NFD, on the somewhat arbitrary basis that NFC is officially defined as “NFD, but then do some more stuff afterwards,” so NFC has the more convoluted definition and it’s more likely you’ll make a mistake implementing it). But you can also argue that NFKD and NFKC are preferable because they remove code points that are likely to cause compatibility problems or confusion for the user, which NFC and NFD do not. On top of that, some cross-platform apps may not realize that macOS does this, and get confused when the path they get from the OS is not byte-for-byte identical to the path they expected to see.
+Other Unices mostly throw up their hands at this problem, and say “paths are just arbitrary bytes, it’s up to userspace to decide how to interpret them.” This has the advantage of being relatively straightforward to implement and easy for application developers to understand and reason about, but the disadvantage that every language or other programming environment with Unicode support has to grow routines for handling paths that are not valid Unicode (and you have to figure out how to explain “not valid Unicode” to the end user). In theory, it also means that you need locale (encoding) information just to display a filename, but in practice, UTF-16 is not even compatible with most Unices anyway (null bytes are not allowed), so the only real options are UTF-8 and various non-Unicode encodings. If you don’t feel like supporting non-Unicode encodings, then you’re done, just use UTF-8, preferably with whatever normalization you like, and call it a day. But if you don’t do that, then there is one other advantage to this system: It allows you to use a non-Han-unified encoding, which some CJK users feel very strongly about.
+Then you have the Windows approach, which splits the difference and says “filenames are valid UTF-16, but we’re not doing normalization, so apps can decide on their own how to normalize their Unicode.” From a programmer’s perspective, this is a nice happy medium, since you can do most “reasonable” things without having to worry too much about the “unreasonable” things that other apps or the system might force you to deal with (invalid Unicode, paths that differ from your expectations, etc.), but it might result in confusion for some users some of the time, if filenames that look the same do not actually match.
+However, I should also point out that even macOS does not prevent you from having identical-looking filenames, because normalization does nothing to get rid of “confusables.” Confusables are Unicode characters that have similar or identical glyphs, but are not semantically equivalent. For example, none of the four standard normalizations will conflate a capital Greek letter alpha with a capital Latin letter A (they are different characters from different scripts), but the vast majority of fonts will render them identically. This is not such a big deal for a filesystem (probably nobody is going around naming their local files in a mixture of Latin and Greek, and then complaining when they get confused), but it can be a real security problem for internationalized domain names (IDNs), since it can be used for phishing. So browsers have to do even more aggressive sanitization to protect against mixed scripts and the like.
+Read less
+
+
+
+
+
+
+
+Kevin Norris  November 10, 2024
+
+
+  0  Collapse this comment
+Copy link
+@Bwmat: It depends.
+Do your users expect to be able to find their files and fiddle with them? Then stop trying to turn strings into paths altogether. Instead present a standard Save As… dialog (for each platform). That will give you a buffer that is pre-encoded in the FS-appropriate encoding, so just pass it directly to fopen.
+If you don’t expect the user to find the files and fiddle with them, then stop trying to put the user’s input in the path, and just give it a fixed (or numeric) name.
+
+
+
+
+
+Bwmat  November 4, 2024
+
+
+  0  Collapse this comment
+Copy link
+So, given a ‘platform-independent’ system which internally passes strings as (possibly-invalid) UTF-16 & accepts user input that potentially in other encodings, including non-unicode encodings, how would you deal w/ filenames that needed to be passed in those strings?
+Right now I just choose not to think about it… too much. We just use the data directly w/ CreateFileW on windows & convert to the ICU-detected ‘platform encoding’ on other platforms & use fopen
+
+
+
+
+
+Chris Warrick  November 1, 2024
+
+
+  0  Collapse this comment
+Copy link
+macOS likes NFD, and at the same time, a lot of macOS software (not necessarily first-party, but prominent applications like Microsoft Word’s spellchecker) get confused by that.
+
+
+
+
+
+Jan Ringoš  November 1, 2024
+
+
+  0  Collapse this comment
+Copy link
+One small correction: Windows (NTFS) paths do not need to be valid UTF-16. Any sequence of 16-bit words (except reserved characters) will work. Unassigned code units, mismatched surrogate pair code units, anything. You can put 510-character long UTF-8 string in filename, and the OS will be totally fine with it.

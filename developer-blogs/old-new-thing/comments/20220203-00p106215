@@ -1,0 +1,115 @@
+Henke37  February 4, 2022
+
+
+  1  Collapse this comment
+Copy link
+And this is another reason not to do funny stuff with the stack, such as trying to allocate and switch to one of your own. Use the fibers api instead, its in cohorts with the default exception handler and will work correctly.
+
+
+
+
+
+word merchant  February 3, 2022
+· Edited
+
+  1  Collapse this comment
+Copy link
+“The default exception handler sees that the guard page exception is not for the current thread’s stack, so it ignores it.”
+At the risk of having missed the point, in this situation, why doesn’t the default exception handler terminate the process? A wild write to the guard page would indicate something is pretty wrong in the application and it probably isn’t going to end well.
+
+
+
+
+
+Raymond Chen Author
+February 3, 2022
+
+
+  1  Collapse this comment
+Copy link
+Because the app might be using guard pages for its own purposes.
+
+
+
+
+
+Ismo Salonen  February 3, 2022
+
+
+  1  Collapse this comment
+Copy link
+Is there any way to opt-in for termination/special exception  ( which should be default but changing this needs the time machine)  ?
+Might help debugging this kind of bugs ? I suppose there are only few applications using quard pages for own purposes.
+
+
+
+
+
+Evan Crawford  February 3, 2022
+
+
+  0  Collapse this comment
+Copy link
+I’m not following either, if an application is using guard pages for its own purposes, then wouldn’t it override the default handler?
+
+
+
+
+
+Raymond Chen Author
+February 4, 2022
+
+
+  0  Collapse this comment
+Copy link
+You’d think so, but guard pages are documented as “If nobody handles the guard page exception, it is ignored and execution resumes normally.” And there may be apps that rely on that behavior. Furthermore, not all accesses to guard pages raise an exception. VirtualLock of a guard page simply fails, and GetLastError tells you “Sorry. Guard page.” No exception.
+
+
+
+Andreas Peitz  February 3, 2022
+
+
+  0  Collapse this comment
+Copy link
+I remember the old article well and still cannot wrap my head around the actual issue. The problem of triggering a guard page, for sure. But how is that any different to normal usage and the stack running out of reserved space? Is there a buffer zone after ("before") the stack or will the stack continue randomly into other allocated memory? Isn't an always growing stack a design flow in the program in the first place? Isn't triggering the stack guard page a "mistake" in general? (ignoring the thread "startup" call chains, but there is a initial huge 64K commit...Read moreI remember the old article well and still cannot wrap my head around the actual issue. The problem of triggering a guard page, for sure. But how is that any different to normal usage and the stack running out of reserved space? Is there a buffer zone after (“before”) the stack or will the stack continue randomly into other allocated memory? Isn’t an always growing stack a design flow in the program in the first place? Isn’t triggering the stack guard page a “mistake” in general? (ignoring the thread “startup” call chains, but there is a initial huge 64K commit anyway, I think). Recursive calls, yes. But that’s a different topic, CrashProgramRecursively. Way too many programmers put way to much stuff on the stack that doesn’t belong there. For me it’s like, programs that shoot their stack guard pages will destroy their stack pointers long before that, due to uninitialized stack variables, stack buffer overflows and so on. Or shallow copies of structures everywhere with references (pointers) stored outside the function and used by other functions. The list goes on. A program that relies on that guard page is the bigger issue in my opinion. (again, not counting startup).
+How about debuggers? Or ReadProcessMemory? Does that trigger guard pages in the remote process? I would think they don’t as this is a virtual memory trigger by the CPU itself and different processes have different memory mappings.
+Read less
+
+
+
+
+
+
+
+MGetz  February 3, 2022
+
+
+  0  Collapse this comment
+Copy link
+I find it interesting that people rarely think about the consequence to next byte e.g.  might be a lot further away than they think it is. Thus it makes good sense to be at least somewhat conscious of how much stack you're using (don't prior optimize, source of all evil etc. still applies) that way you're less likely to hit things like the guard page and thus odd perf hits that don't always make sense. That said once the page is hit as far as I know windows never reclaims it so it's a one time thing. I guess...Read moreI find it interesting that people rarely think about the consequence to next byte e.g. rsp-1 might be a lot further away than they think it is. Thus it makes good sense to be at least somewhat conscious of how much stack you’re using (don’t prior optimize, source of all evil etc. still applies) that way you’re less likely to hit things like the guard page and thus odd perf hits that don’t always make sense. That said once the page is hit as far as I know windows never reclaims it so it’s a one time thing. I guess it probably doesn’t matter except for benchmarks and the like and if they were really concerned they’d just set the stack size default in the linker so this isn’t an issue. /randommusings
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  February 3, 2022
+
+
+  1  Collapse this comment
+Copy link
+Or do what I do. The stack is pre-allocated. There’s only one guard page at the very top; if you ever fault in it you could recover the process but that work unit is being cancelled.
+I got tired of “impossible” stack overflows because somebody else ran the server out of RAM.
+
+
+
+
+
+MGetz  February 4, 2022
+
+
+  0  Collapse this comment
+Copy link
+EXE pre-allocate via linker options? Or something else? Either way I pretty much assumed that would be a must for a benchmark because if that happens at the wrong time it’s extremely expensive for something that shouldn’t be losing the 2k+ cycles dealing with the fault. That said there could still be the possibility that an interrupt could trigger the fault? (Raymond would need to weigh in on if the kernel cares or not, I suspect it technically does but uses so little as to not matter much).

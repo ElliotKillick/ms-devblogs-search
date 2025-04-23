@@ -1,0 +1,174 @@
+紅樓鍮  November 15, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+Standard file streams are noncopyable but are movable, so they still have value semantics (which is usually what we care about). Examples of things that definitively shouldn't have value semantics at all (shouldn't be movable) include atomic variables, since the whole point of atomic variables is to have a stable memory address that threads can rendezvous at.
+Edit: I realize you may be talking about the pre-C++0x world, in which case, yes, noncopyable classes couldn't have value semantics. Though note that some code from those days () provided nonstandard forms of what we today call the move operation (taking a non-const...Read moreStandard file streams are noncopyable but are movable, so they still have value semantics (which is usually what we care about). Examples of things that definitively shouldn’t have value semantics at all (shouldn’t be movable) include atomic variables, since the whole point of atomic variables is to have a stable memory address that threads can rendezvous at.
+Edit: I realize you may be talking about the pre-C++0x world, in which case, yes, noncopyable classes couldn’t have value semantics. Though note that some code from those days (auto_ptr) provided nonstandard forms of what we today call the move operation (taking a non-const lvalue reference, instead of an rvalue reference).
+Read less
+
+
+
+
+
+
+
+Shawn Van Ness  November 14, 2024
+
+
+  3  Collapse this comment
+Copy link
+I’ve recently returned to C++ development, after a 20+ year detour in C#/Java land, and I find myself shocked by things like this.  Who thinks this is a reasonable way for programmers to work — wading through dozens of lines of error messages, for something as simple as an assignment operation..  and we need a multi-part article from Raymond to explain how to do it?
+
+
+
+
+
+LB  November 15, 2024
+
+
+  0  Collapse this comment
+Copy link
+We don’t need a multi-part article, this is just a contrived example that most C++ developers would not encounter because it’s unnatural to write this sort of code, and Raymond enjoys diving into the gory details of such incidents. That’s why we all enjoy reading this blog.
+
+
+
+
+
+Raymond Chen Author
+November 15, 2024
+
+
+  3  Collapse this comment
+Copy link
+This wasn’t contrived. It actually happened. Though it has been simplified for expository purposes.
+
+
+
+Sigge Mannen  November 14, 2024
+
+
+  1  Collapse this comment
+Copy link
+I don’t get why incoming values need to be movable or *anything* to be put to optional, optional should be just a wrapper and there shouldn’t be needed to construct or manipulate the inner object in anyway.
+But maybe i’m writing something dumb with java colored glasses here
+
+
+
+
+
+Kevin Norris  November 14, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+This is very much a case of Java colored glasses.
+In Java: Objects exist on the heap, and variables point to them. When an object is no longer needed, the JVM destroys it (garbage collection). An instance of java.util.Optional contains a pointer to an object (which may be null), which means that the bytes that make up the object are at some random allocation on the heap, and have nothing to do with the bytes that make up the Optional.
+In C++: Objects exist at addresses in memory, which may be on the heap or on the stack, and variables are like...Read moreThis is very much a case of Java colored glasses.
+In Java: Objects exist on the heap, and variables point to them. When an object is no longer needed, the JVM destroys it (garbage collection). An instance of java.util.Optional contains a pointer to an object (which may be null), which means that the bytes that make up the object are at some random allocation on the heap, and have nothing to do with the bytes that make up the Optional.
+In C++: Objects exist at addresses in memory, which may be on the heap or on the stack, and variables are like little boxes you can put an object into (strictly: a variable is an allocation of memory, usually on the stack or as a component of some larger containing object, which is properly sized and aligned for a given type). Objects are destroyed when their lifetime ends (either because the containing variable went out of scope, or because the object was explicitly or implicitly destructed by some other means). An instance of std::optional contains an object, which means that the bytes that make up the object are a subset of the bytes that make up the optional. It is therefore not possible to put an object into an optional without changing the address at which it is located, or constructing it in-place. If you want the Java behavior, you put a pointer (raw or smart) into the optional, which works just as well since pointers are themselves objects.
+Read less
+
+
+
+
+
+
+
+Flynn Taggart  November 14, 2024
+
+
+  0  Collapse this comment
+Copy link
+The most common use case for optional is to write a function that *may* return a value. So it either returns empty optional or optional with some data. And commonly that data is going to be created inside that function, on stack. Any data located on stack must be returned from the function as a value (i.e.: copied or moved) because if you'd returned a reference, that data would cease to exist at the moment of the function returning.
+So, optional enforces value semantics on wrapped types to prevent you from shooting yourself in a foot (=returning pointer to invalid memory)....Read moreThe most common use case for optional is to write a function that *may* return a value. So it either returns empty optional or optional with some data. And commonly that data is going to be created inside that function, on stack. Any data located on stack must be returned from the function as a value (i.e.: copied or moved) because if you’d returned a reference, that data would cease to exist at the moment of the function returning.
+So, optional enforces value semantics on wrapped types to prevent you from shooting yourself in a foot (=returning pointer to invalid memory).
+Java doesn’t care. That memory would be valid for as long as you would need it because objects with reference semantics (c# slang, hope it is the same in Java) are allocated on heap and objects with value semantics have… well… value semantics, they’re copyable.
+Read less
+
+
+
+
+
+
+紅樓鍮  November 14, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+While I'd say it's more about either 1) novice C++ programmers blindly chanting magic (defining non-defaulted default ctor, dtor, etc) they heard from others but never understood the meanings (and dangers) of, or 2) the programmer genuinely believing in OOP supremacy and refusing to study value semantics.
+If  were written before C++0x, it would nevertheless not prevent you from assigning between values of the class if the programmer writing it knew value semantics and did what was needed for it to have value semantics: make it copy-constructible and copy-assignable. The class wouldn't be optimally performant post-C++0x, but it's backward compatible...Read moreWhile I’d say it’s more about either 1) novice C++ programmers blindly chanting magic (defining non-defaulted default ctor, dtor, etc) they heard from others but never understood the meanings (and dangers) of, or 2) the programmer genuinely believing in OOP supremacy and refusing to study value semantics.
+If class Doodad were written before C++0x, it would nevertheless not prevent you from assigning between values of the class if the programmer writing it knew value semantics and did what was needed for it to have value semantics: make it copy-constructible and copy-assignable. The class wouldn’t be optimally performant post-C++0x, but it’s backward compatible to add move operations to it, which would make it optimal.
+On the other hand, any class that’s intentionally non-movable should be made so because they genuinely model objects as opposed to values: usually because they’re simultaneously shared and mutated by the sharing parties.
+Edit: Having written and posted this comment as a reply to LB’s reply to Roeland Schoukens’ comment, I now find it appearing as a top-level comment for unknown reasons. Whichever MSFT employees have been tasked with rewriting the code for devblogs, I pity you, because you must have been and will remain under attack from bug reports for all the bugs you’ve written.
+Read less
+
+
+
+
+
+
+
+LB  November 15, 2024
+
+
+  0  Collapse this comment
+Copy link
+Not everything makes sense to be copyable though, and trying to force that often results in you turning things into refcounted handles, which have their own undesirable gotchas. For example C++ standard file streams are not copyable but some operating systems do allow duplicating file handles, for better or for worse…
+
+
+
+
+IS4  November 14, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+My favourite last resort for bad-behaving classes is to call the destructor, followed by in-place constructor. In this case the std::optional’s std::in_place_t constructor should do the trick.
+
+
+
+
+
+Neil Rashbrook  November 14, 2024
+
+
+  0  Collapse this comment
+Copy link
+Since you’re in Widget’s constructor, I feel it’s safe to emplace the Doodad directly. (This wouldn’t be true if the Doodad was already visible to outside code, as there might be extra initialisation to do.)
+
+
+
+
+
+Roeland Schoukens  November 13, 2024
+
+
+  5  Collapse this comment
+Copy link
+Filed in category: things that C++ programmers think of as normal, but look completely beyond the pale bonkers to other programmers.
+For what it’s worth, we will hit a similar problem if our Widget has a simple Doodad m_doodad; member and we want to change it.
+
+
+
+
+
+LB  November 14, 2024
+
+
+  0  Collapse this comment
+Copy link
+It’s less “normal” and more “backward compatibility”. As explained in the bonus reading, if Doodad was allowed to be implicitly movable, that would break a lot of old pre-C++11 code that wasn’t designed with move semantics in mind. It sucks but this is the best solution: just require explicitly defaulting the move operations in this case.
+
+
+
+
+
+Paulo Pinto  November 13, 2024
+· Edited
+
+  1  Collapse this comment
+Copy link
+It has already bypassed PL/I and Algol 68 famous complexity, setting a new standard.
+Which is a pity, it is one of my favourite languages, however somehow what the language scientists design on their ISO lab, and what we foots on the ground wish for, went into split directions.

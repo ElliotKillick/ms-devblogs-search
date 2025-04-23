@@ -1,0 +1,118 @@
+Mohammad Ghasemi  October 22, 2023
+
+
+  0  Collapse this comment
+Copy link
+What design decisions can lead to violation of this principle?
+
+
+
+
+
+GL  October 17, 2023
+
+
+  0  Collapse this comment
+Copy link
+>If you read the Widget.Stream property, you must call the Close method on the returned stream.
+This slightly confuses me. In WinRT (or COM in general), if you get a property of object type (whose return type is pointer to IUnknown or its descendant), then you’re of course supposed to Release it. I suppose the principle does not apply to this case, as any decent debugger should be aware of this situation. (Also a property returning a string needs to be properly deallocated.)
+Now here’s the confusion part. If you read Stream and the returned value is the last reference to it,...Read more>If you read the Widget.Stream property, you must call the Close method on the returned stream.
+This slightly confuses me. In WinRT (or COM in general), if you get a property of object type (whose return type is pointer to IUnknown or its descendant), then you’re of course supposed to Release it. I suppose the principle does not apply to this case, as any decent debugger should be aware of this situation. (Also a property returning a string needs to be properly deallocated.)
+Now here’s the confusion part. If you read Stream and the returned value is the last reference to it, then I expect Releasing it will cause the stream to be Closed. If not, then I’m not sure if Closing it is a good idea because others might read from the property, only to get a closed stream. I get the idea of this principle, but it’s difficult for me to come up with a natural scenario where getting such a property would require (by how it is naturally coded) the caller to Close it.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+October 17, 2023
+
+
+  0  Collapse this comment
+Copy link
+It happens when people implement the Stream getter as IStream Stream { get { return new Stream(); } }. They aren’t thinking of a property as “tell me the value of this thing”, but rather as a handy syntax for function calls.
+
+
+
+
+
+Ron Parker  October 17, 2023
+
+
+  0  Collapse this comment
+Copy link
+Perhaps you're working on a legacy system that has a vast C API, and Widget.Stream is a property provided for backward compatibility with that C API - it actually returns a "stream handle" that's just a bare pointer to some opaque structure plopped into a chunk of memory that the property getter allocated just for you. To work with it, you use a bunch of C functions, and when you're done, you close it by calling one of those C functions.
+Windows still has a lot of APIs like this, and even some COM APIs like this (CoTaskMemFree, anyone?) There's a...Read morePerhaps you’re working on a legacy system that has a vast C API, and Widget.Stream is a property provided for backward compatibility with that C API – it actually returns a “stream handle” that’s just a bare pointer to some opaque structure plopped into a chunk of memory that the property getter allocated just for you. To work with it, you use a bunch of C functions, and when you’re done, you close it by calling one of those C functions.
+Windows still has a lot of APIs like this, and even some COM APIs like this (CoTaskMemFree, anyone?) There’s a whole chunk of WIL whose entire purpose is to make managing stuff like this less error-prone. The goal is for WinRT to avoid going down the same road.
+Read less
+
+
+
+
+
+
+Shy Shalom  October 17, 2023
+
+
+  0  Collapse this comment
+Copy link
+C# has one of these baked into the language.
+When an event has no subscribers, it is equal to null, so you need to have a null check before invoking the event, which introduces a flow divergence from the case where you do have subscribers.
+
+
+
+
+
+GL  October 17, 2023
+
+
+  0  Collapse this comment
+Copy link
+You cannot invoke an event — what people are often doing is to invoke the delegate stored in the underlying field of a field-like event, which is internal to the class, as the implementation of raising that event. The principle does not suggest that C# should ensure a field-like event is backed by a non-null delegate. Instead, it means that the implementing class must raise the event correctly with the null check, given how C# implements it.
+
+
+
+
+Antonio Rodríguez  October 16, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+You are talking about the consequences of those side effects while a debugger is active, or when you are learning the API. Which is fine. But I think there is a more fundamental justification for this principle.
+A property is a pair of getter and setter in disguise which makes it look and act as if it were a member variable. Thus, just as reading a variable should have no side effects at all, reading a property (and calling the underlying getter) shouldn't have them, either. Maybe the getter takes its time to calculate the requested value, or maybe it needs...Read moreYou are talking about the consequences of those side effects while a debugger is active, or when you are learning the API. Which is fine. But I think there is a more fundamental justification for this principle.
+A property is a pair of getter and setter in disguise which makes it look and act as if it were a member variable. Thus, just as reading a variable should have no side effects at all, reading a property (and calling the underlying getter) shouldn’t have them, either. Maybe the getter takes its time to calculate the requested value, or maybe it needs to initialize a cache which takes some memory and has to be cleared on destruction, but there should be no change in the object’s publicly observable state.
+The same can be said about events. You can see them as notifications or messages of some kind. The IRS is telling that you are late with your income tax, but if you already know, you can toss the letter to the bin. You decide (and assume the consequences!). Subscribing to an event or ignoring it should make no difference. Possibly with the exception of mandatory events, or those with well-documented by reference parameters (like the Cancel parameter in classic Visual Basic’s QueryUnload and Unload events).
+If it is designed to be yellow, have feathers and quack, you better make sure it behaves like a duck. Don’t make promises you won’t fulfill.
+Read less
+
+
+
+
+
+
+
+Ron Parker  October 17, 2023
+
+
+  0  Collapse this comment
+Copy link
+These days, it's mostly something you run into with embedded systems, but there's a long tradition of hardware registers that are reset-on-read. They generally serve a specific purpose along the lines of "what has changed since the last time I asked?" which turns out to be a convenient way to avoid the potential race condition that happens when read and reset are separate operations and there's no such thing as locking.
+I agree that it's probably bad design to make such registers properties of some theoretical abstraction layer, but I can definitely see it happening. Especially if the abstraction layer was...Read moreThese days, it’s mostly something you run into with embedded systems, but there’s a long tradition of hardware registers that are reset-on-read. They generally serve a specific purpose along the lines of “what has changed since the last time I asked?” which turns out to be a convenient way to avoid the potential race condition that happens when read and reset are separate operations and there’s no such thing as locking.
+I agree that it’s probably bad design to make such registers properties of some theoretical abstraction layer, but I can definitely see it happening. Especially if the abstraction layer was originally written for some similar piece of hardware that didn’t do reset-on-read and the API is already defined. (Of course, in that case you’re going to spend the next two years tracking down the bugs caused by the behavioral difference, so you should just change the API anyway, but you know everyone’s done it the “easy” way at least once.)
+Read less
+
+
+
+
+
+
+
+Antonio Rodríguez  October 17, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+Oh, yes. Hardware registers. Lovely stuff, filled with features whose only purpose seems to cause trouble. But those have the excuse of being one-off interfaces, often used just by the driver provided by the maker. Anyway, even when I’m designing an interface just for my use, I tend to avoid those gotchas. I have been bitten enough times. In fact, there is this user interface design adage, “if the user needs to look at the manual, you have lost the game”, which also applies to software interfaces.

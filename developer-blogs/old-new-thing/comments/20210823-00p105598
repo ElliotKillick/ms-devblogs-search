@@ -1,0 +1,150 @@
+John McPherson  August 23, 2021
+
+
+  0  Collapse this comment
+Copy link
+This seems particularly fragile, as a null char that just so happens to exist after the last character of a string_view may not be "owned" by said string_view and could easily change to no longer be null in the future.  I suppose if it is happening on every attempt to get the data pointer from the hstring it is at least likely to crash there early and frequently enough to give you the hint, but it could also just be an unterminated string that could lead to any number of other issues.  I realize the difficulty here though;...Read moreThis seems particularly fragile, as a null char that just so happens to exist after the last character of a string_view may not be “owned” by said string_view and could easily change to no longer be null in the future.  I suppose if it is happening on every attempt to get the data pointer from the hstring it is at least likely to crash there early and frequently enough to give you the hint, but it could also just be an unterminated string that could lead to any number of other issues.  I realize the difficulty here though; WIL or winrt should offer a string_view_z if std isn’t going to.  I would happily make the switch in my codebase.
+Read less
+
+
+
+
+
+
+
+Richard Thompson  August 24, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+This is a straight up bug in WinRT. It needs fixing.
+std::string_view is a good choice for the API, as it's the zero-copy way of passing an arbitrary subsection of a string.
+Note that the entire reason for it existing is that it's "zero-copy".
+This means it's fundamentally not null-terminated - inserting a null would mean stomping on the source string's memory!
+It's really useful when parsing text formats as it massively reduces the amount of copying.
+It appears that somebody in the WinRT team forgot that the C++17 standard makes it very clear that string_view is not null terminated, and instead made...Read moreThis is a straight up bug in WinRT. It needs fixing.
+std::string_view is a good choice for the API, as it’s the zero-copy way of passing an arbitrary subsection of a string.
+Note that the entire reason for it existing is that it’s “zero-copy”.
+This means it’s fundamentally not null-terminated – inserting a null would mean stomping on the source string’s memory!
+It’s really useful when parsing text formats as it massively reduces the amount of copying.
+It appears that somebody in the WinRT team forgot that the C++17 standard makes it very clear that string_view is not null terminated, and instead made the outright wrong decision to treat it as a C string.
+Qt and Boost have had equivalent string view classes for many years.
+The usual implementation is a start pointer + length – very similar to a Pascal string, in fact.
+Read less
+
+
+
+
+
+
+
+Paulo Pinto  August 25, 2021
+
+
+  0  Collapse this comment
+Copy link
+No surprise, given that WinRT team also ignored Visual Studio tooling productivity.
+
+
+
+
+
+Kalle Niemitalo  August 24, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+WindowsCreateStringReference requires a "terminating null character", though. So if the winrt::param::hstring::hstring(std::wstring_view const&) constructor could not assume a null character past the end, then it would have to either allocate a temporary copy or instead use WindowsCreateString, which itself allocates a copy. Either way, it would be slower.
+The winrt::param::hstring::hstring(std::wstring const&) and winrt::param::hstring::hstring(wchar_t const*) constructors can assume a null character at the end. So if the winrt::param::hstring::hstring(std::wstring_view const&) constructor were changed to use WindowsCreateString, then a developer who knows that the wstring_view has a null character could use wstring_view::data() to get a wchar_t const* that could then be converted to winrt::param::hstring without...Read moreWindowsCreateStringReference requires a “terminating null character”, though. So if the winrt::param::hstring::hstring(std::wstring_view const&) constructor could not assume a null character past the end, then it would have to either allocate a temporary copy or instead use WindowsCreateString, which itself allocates a copy. Either way, it would be slower.
+The winrt::param::hstring::hstring(std::wstring const&) and winrt::param::hstring::hstring(wchar_t const*) constructors can assume a null character at the end. So if the winrt::param::hstring::hstring(std::wstring_view const&) constructor were changed to use WindowsCreateString, then a developer who knows that the wstring_view has a null character could use wstring_view::data() to get a wchar_t const* that could then be converted to winrt::param::hstring without copying the string… except this would truncate the string at the first null character. I guess a proper fix would then require a dedicated function.
+The current behavior is documented in Passing parameters into the ABI boundary, not only in this blog.
+Read less
+
+
+
+
+
+
+
+Adam Rowell  August 24, 2021
+
+
+  0  Collapse this comment
+Copy link
+That’s the point. If winrt::hstring wants to reference existing null-terminated strings, it has no business in accepting std::wstring_view, the only safe thing to do is copy the string.
+I think someone saw that you can have std::wstring_view literals and didn’t check all the other ways of getting one.
+
+
+
+
+
+Kalle Niemitalo  August 24, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+winrt::hstring always copies the string or increments the reference count of an existing HSTRING. winrt::param::hstring never copies.
+
+
+
+
+Carey Evans  August 23, 2021
+
+
+  0  Collapse this comment
+Copy link
+It could be even more interesting if the `string_view` ends on a page boundary and the next page is unmapped, which will lead to a segmentation violation instead. It’s undefined behaviour to read from beyond the bounds of an array, so an `abort()` is just the best case.
+
+
+
+
+Tiger Wang  August 23, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+// const auto ResponseView = std::wstring_view(Response);
+const auto Left = Response.find('{');
+const auto Right = Response.rfind('}');
+
+SId = Windows::Data::Json::JsonObject::Parse(Response.substr(Left, Right + 1 - Left)).GetNamedString(L"sid");
+That probably explains why the code appeared to crash in Parse when I used a ResponseView, right? I thought I was losing my wits.
+
+
+
+
+
+Raymond Chen Author
+August 23, 2021
+
+
+  0  Collapse this comment
+Copy link
+Not clear what Response is, but if it’s a wstring_view, then you have a problem. What you get, though, isn’t so much a crash as a fail-fast: The code performs a if (value[length] != 0) abort(), so it’s clear from the stack trace that the problem is a missing null terminator. (If Response is a wstring then you should be fine.)
+
+
+
+
+
+Martin Ba  August 24, 2021
+
+
+  0  Collapse this comment
+Copy link
+No. Wait.
+value[length]
+?
+the behavior is undefined if pos greater equal size()
+So is that check already UB?
+
+
+
+
+
+Carey Evans  August 24, 2021
+
+
+  0  Collapse this comment
+Copy link
+Yes, if WinRT uses the [] operator, then the spec says that’s undefined behaviour. If WinRT retrieves the underlying buffer from data(), then I think it’s only undefined behaviour if the buffer is not long enough.
+Hopefully the WinRT team are doing the latter, and aren’t at the mercy of MSVC deciding to optimise the check away because it can’t happen.

@@ -1,0 +1,64 @@
+Michael Ens  October 10, 2022
+
+
+  0  Collapse this comment
+Copy link
+I recall a time this caused great sadness.  There was a custom smart pointer type that had the release-on-& behaviour.  It was accessed in a fashion like this:
+spLinkedList->Next(&spLinkedList);
+Which, if it's not obvious how that breaks, can be thought of as similar to a C function with the variable left of the "->" being passed as a magic first parameter 'this' pointer:
+CPlusPlusNameMangling_Next(spLinkedList, &spLinkedList)
+Order of evaluation of arguments is undefined in C++.  So there's two possible results.  In our original compiler, it evaluated left-to-right.  That meant we passed the variable as the this pointer, then we released...Read moreI recall a time this caused great sadness.  There was a custom smart pointer type that had the release-on-& behaviour.  It was accessed in a fashion like this:
+spLinkedList->Next(&spLinkedList);
+Which, if it’s not obvious how that breaks, can be thought of as similar to a C function with the variable left of the “->” being passed as a magic first parameter ‘this’ pointer:
+CPlusPlusNameMangling_Next(spLinkedList, &spLinkedList)
+Order of evaluation of arguments is undefined in C++.  So there’s two possible results.  In our original compiler, it evaluated left-to-right.  That meant we passed the variable as the this pointer, then we released it.  Oops!  Didn’t hold a reference long enough, so you risk randomly corrupting your data.  You have a decent chance of getting “lucky” if this is a linked list with single-threaded access, though, since there will be another reference from the previous list entry or from the head of the linked list, and therefore the data wouldn’t corrupt.  This is the behaviour we saw on the x86 and x64 compiler.
+When we later added ARM compiles, we saw right-to-left evaluation of arguments.  So we passed the address of the smart pointer and also released/null’d it.  Then, the “this” pointer was unconditionally null.  Null pointer write AV guaranteed.
+(I tried to search whether you covered something like this before but you have so much content, and the only thing I found was a reference to how C# does define order of parameter evaluation with a dead link presumably to the C# documentation).
+Read less
+
+
+
+
+
+
+
+Dmitry  October 11, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Isn’t null-pointer dereferencing a case of UB on C++? Is AV really guaranteed, at least in the expected order? I remember Raymond’s articles on UB discussing that.
+
+
+
+
+
+Neil Rashbrook  October 11, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Wouldn’t something like spLinkedList->Next(spLinkedList.put()); have the same issue?
+
+
+
+
+
+Raymond Chen Author
+October 11, 2022
+
+
+  0  Collapse this comment
+Copy link
+The hope is that the explicit call to put() is a clue that “Hey, I’m arrowing through an object and mutating it at the same time. That doesn’t seem right.” On the other hand, people don’t think of the & operator as a mutating operator.
+
+
+
+
+Raymond Chen Author
+October 10, 2022
+
+
+  0  Collapse this comment
+Copy link
+I think the article you’re looking for is this one.

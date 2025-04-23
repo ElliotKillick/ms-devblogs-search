@@ -1,0 +1,131 @@
+Simon Geard  December 22, 2023
+
+
+  1  Collapse this comment
+Copy link
+Yes, I’ve had variants of this conversation many times before. No, don’t return 404 Not Found for an empty resource collection. No, don’t return null from functions that return lists, and no, don’t throw exceptions either. Empty collections are valid data.
+On the same note, don’t check if the collection was empty before iterating over it. Iterating over an empty collection is not unsafe, and will not be appreciably slower than checking for empty first. Think!
+
+
+
+
+
+Melissa P  December 22, 2023
+
+
+  0  Collapse this comment
+Copy link
+Okay, Explorer crashing on accessing a returned nullptr is something I blame on Microsoft. Not much you can do if you receive a garbage pointer, but checking nullptr is something that should be done by heart, not even thinking about it. I can’t even count how many times I requested an object via QueryInterface or EnumAdapter, GetDevice etc and received S_OK with a nullptr.
+
+
+
+
+
+GL  December 23, 2023
+
+
+  1  Collapse this comment
+Copy link
+If `IUnknown::QueryInterface` returns `S_OK` with a `nullptr`, then the interface has been incorrectly implemented and all bets are off. If the object is loaded into `explorer.exe`, from the fact that it cannot implement `IUnknown` properly, we deduce that nothing much can be expected from this object and we might as well assume that the process is corrupted, so crashing really isn’t a bad idea. On the other hand, if the object is loaded out of process, then `explorer.exe` should gracefully refuse to work with that COM server.
+
+
+
+
+
+Antonio Rodríguez  December 22, 2023
+
+
+  0  Collapse this comment
+Copy link
+What Raymond says in the article is that Explorer, if it receives an error code when invoking IFolderView::Items, interprets that the shell extension is broken, and stops working with it. I guess it may do the same if a null pointer is returned — as you say, a null pointer check is cheap. Frankly, that is the least it can do with a ill-behaving extension. If it didn’t shut down the extension, the probability of a hard crash would become greater with each call. And then, boom!, all folder windows are closed at once, and the user blames Explorer.
+
+
+
+
+Antonio Rodríguez  December 22, 2023
+· Edited
+
+  1  Collapse this comment
+Copy link
+Are there programmers asking this? Really? Someone writing a shell extension who doesn't understand the difference between returning an empty array/collection and throwing an exception? No wonder there are so many buggy shell extensions out there (of which Windows gets the blame in the end). Sometimes I think Microsoft's real mistake was to open the the shell extensions API...
+And yes, I understand that returning an error code isn't technically the same as throwing an exception. But conceptually it is. Both are ways of telling "I have not been able to complete your request because of an error condition". And both,...Read moreAre there programmers asking this? Really? Someone writing a shell extension who doesn’t understand the difference between returning an empty array/collection and throwing an exception? No wonder there are so many buggy shell extensions out there (of which Windows gets the blame in the end). Sometimes I think Microsoft’s real mistake was to open the the shell extensions API…
+And yes, I understand that returning an error code isn’t technically the same as throwing an exception. But conceptually it is. Both are ways of telling “I have not been able to complete your request because of an error condition”. And both, if unexpected, can turn into a catastrophic failure.
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  December 22, 2023
+
+
+  0  Collapse this comment
+Copy link
+The behavior of FindFirstFileName on an empty root directory or no files match the wildcard is to return an error code. The programmer’s hypothesis is not unreasonable.
+
+
+
+
+
+Antonio Rodríguez  December 22, 2023
+
+
+  0  Collapse this comment
+Copy link
+IIRC, FindFirstFileName’s semantics are modeled on those of Unix’s readdir system call, because of NT’s requirement of Posix compliance. I don’t think you should compare a modern, object oriented API with one developed for a PDP-11 50 years ago. IFolderView::Items behaves the way that is expected in the 21st Century, but FindFirstFileName is an oddity of the past.
+
+
+
+
+
+Joshua Hudson  December 24, 2023
+
+
+  0  Collapse this comment
+Copy link
+I did indeed intend FindFirstFile.
+I seem to inhabit a strange world where readdir is man(2) readdir not man(3) readdir. The actual kernel interface is far saner than the library call. readdir_r is pretty good but there’s no corresponding opendir_r.
+In 1984 however the API was kind of stupid. You didn’t call opendir and readdir you called open and read, and had the directory entry header in system header files. This did have the nicety of no error vs end of list problems.
+But FindFirstFile is more analogus to opendir than readdir.
+
+
+
+
+
+Joshua Hudson  December 22, 2023
+
+
+  0  Collapse this comment
+Copy link
+Except for the fact that readdir doesn’t have the actual behavior that’s being discussed here. It’s new in DOS.
+
+
+
+
+
+Antonio Rodríguez  December 23, 2023
+
+
+  0  Collapse this comment
+Copy link
+First, I think you are confusing FindFirstFileName with FindFirstFile. FindFirstFileName operates on a file, and enumerates all the links ("names") to it. It's FindFirstFile who works on directories to enumerate their contents.
+That said, as per the readdir(3) man page, readdir returns a null pointer on an empty directory (or when it reaches the end of the file list), and sets the global variable errno to indicate the result. FindFirstFile in the same cases returns INVALID_HANDLE_VALUE and sets the last error. As you can see, the semantics are quite similar between both.
+I can't find any reliable data, but I'm pretty sure...Read moreFirst, I think you are confusing FindFirstFileName with FindFirstFile. FindFirstFileName operates on a file, and enumerates all the links (“names”) to it. It’s FindFirstFile who works on directories to enumerate their contents.
+That said, as per the readdir(3) man page, readdir returns a null pointer on an empty directory (or when it reaches the end of the file list), and sets the global variable errno to indicate the result. FindFirstFile in the same cases returns INVALID_HANDLE_VALUE and sets the last error. As you can see, the semantics are quite similar between both.
+I can’t find any reliable data, but I’m pretty sure readdir is much older than MS-DOS. Obviously, being an Unix system call, it wasn’t introduced in MS-DOS. And I would be surprised it it weren’t present in the first version of Unix from 1971, given that it is its basic method of directory enumeration, a service that any file-based OS has to provide.
+Read less
+
+
+
+
+
+
+
+Melissa P  December 22, 2023
+
+
+  0  Collapse this comment
+Copy link
+That’s kinda different. FindFirstFileName does not return a list, only a single entry.  And a handle for requesting further entries. If no entry exists then the entry does not contain useful data, hence the function returns no handle and sets an error code. Old windows versions didn’t even clear the provided entry data structure on error.

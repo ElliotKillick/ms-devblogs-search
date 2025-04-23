@@ -1,0 +1,74 @@
+Ron Parker  August 11, 2023
+· Edited
+
+  0  Collapse this comment
+Copy link
+About 25 years ago, give or take, I was given the task of improving the performance of our application, which had originally been written by contractors who were somewhat out of their depth. One of the data structures at the heart of the application was something they called a "memory array," and it was about the simplest implementation of an ordered map you could think of: underlying it all was a simple array like a std::vector. Insertion was O(n), deletion was O(n), search was O(n) but didn't have to be - they could have made it O(log n). The only...Read moreAbout 25 years ago, give or take, I was given the task of improving the performance of our application, which had originally been written by contractors who were somewhat out of their depth. One of the data structures at the heart of the application was something they called a “memory array,” and it was about the simplest implementation of an ordered map you could think of: underlying it all was a simple array like a std::vector. Insertion was O(n), deletion was O(n), search was O(n) but didn’t have to be – they could have made it O(log n). The only thing that was okay was iteration, which was O(1). They also had a bad case of “when all you have is a hammer,” and had made a lot of functionality use really badly chosen operator overloads, but that’s a story for a different time.
+I ended up rewriting that code to use a 2-3 tree, because somehow I had more familiarity with that structure than with the more-popular red-black trees. That made insertion, deletion, and search O(log n), but it also made iteration O(log n). (Correction: actually amortized O(1), as noted in the Bonus Chatter, but still worse than it was.)
+Later, I made some changes to it so it was instead a threaded 2-3 tree, which brought iteration back to O(1), without significantly changing the complexity of insertion/deletion/search.
+Anyway, the point of this comment is to say that I believe a threaded 2-3 tree also meets the complexity requirements of std::map and its iterators. I suspect that it might require more storage for the empty values in underpopulated nodes, so it probably wouldn’t be a particularly good choice, but it would meet the requirements.
+Read less
+
+
+
+
+
+
+
+chris esposito  August 8, 2023
+
+
+  0  Collapse this comment
+Copy link
+It would be interesting to know how the implementation and performance of a concurrent unordered map (since this is a Microsoft – related blog, maybe the concurrent_unordered_map at https://learn.microsoft.com/en-us/cpp/parallel/concrt/parallel-containers-and-objects?view=msvc-170#unordered_map ) compares with the standard unordered_map described here.
+
+
+
+
+
+Graham Freckleton  August 7, 2023
+
+
+  1  Collapse this comment
+Copy link
+As mentioned in the STL std::string post, there was a 'curious' implementation of the Microsoft STL std::map (et al) implementation. This was in the early days of Visual C++ 6.0 (~1999-2001).
+We had implemented a multi-threaded (free threaded) COM server that heavily used maps/sets. The performance was terrible. We really didn't think it was doing much, so we fired up the profiler. Holy smoke the map/set was doing a lot of locking - most of the time was in fact spent locking, worse was during find() operations where every node traversal was doing a lock/unlock.
+This was weird. It had never occurred...Read moreAs mentioned in the STL std::string post, there was a ‘curious’ implementation of the Microsoft STL std::map (et al) implementation. This was in the early days of Visual C++ 6.0 (~1999-2001).
+We had implemented a multi-threaded (free threaded) COM server that heavily used maps/sets. The performance was terrible. We really didn’t think it was doing much, so we fired up the profiler. Holy smoke the map/set was doing a lot of locking – most of the time was in fact spent locking, worse was during find() operations where every node traversal was doing a lock/unlock.
+This was weird. It had never occurred to me to lock the map while IN the node traversal. Sure the map/iterators are consistent during the traversal, but once it pops out of the map’s method it will be open season on said map/iterator. Which is why we had our own locking around the access to these maps.
+The solution was a bit of a hack. There was a STL class called ‘lockit’ (from memory – this was >20 years ago) which did the locking. I declared/instantiated our own version of this class early in the build process that just did a NOP. Performance issues then were solved – though allocations were still being done, but after the previous performance this was trivial. A latter implementation of the Microsoft STL (maybe 5 years later – it was a long time ago) thankfully removed this locking.
+Read less
+
+
+
+
+
+
+
+Ivan Kljajic  August 8, 2023
+
+
+  0  Collapse this comment
+Copy link
+From my memory (may be wrong), the pjp version at some time used a static sentinel node that required locking when modifying the tree in *certain* situations. The borland version just used NULL and some extra logic to handle that. Interesting times…
+
+
+
+
+skSdnW  August 7, 2023
+
+
+  1  Collapse this comment
+Copy link
+One extra allocation for the external header is obviously a con, what is the pro?
+
+
+
+
+
+Phil Deets  August 7, 2023
+
+
+  3  Collapse this comment
+Copy link
+The pro is that end iterators are not invalidated when you move the container. One of the values of a node-based container is the lack of iterator invalidation on move. Embedding the sentinal adds an asterisk to that which forces you to be careful to not store end iterators across a container move. Having an external sentinal node though causes move contructors to be potentially throwing due to the need to allocate a new sentinal node, so neither side is a clear win.

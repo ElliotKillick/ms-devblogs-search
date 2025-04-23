@@ -1,0 +1,150 @@
+Rosyna Keller  March 24, 2025
+
+
+  0  Collapse this comment
+Copy link
+As Raymond mentioned, using LoadLibraryXX() requires you use GetProcAddress() to hook up functions address pointers. This becomes tedious.
+I am surprised Raymond didn’t mention the manifest solution if it can really affect only the specific DLL and automatically connect the function pointers, as loading a DLL by linking to it normally would.
+
+
+
+
+
+Stefan Kanthak  March 24, 2025
+
+
+  0  Collapse this comment
+Copy link
+“As Raymond mentioned, using LoadLibraryXX() requires you use GetProcAddress() to hook up functions address pointers. This becomes tedious.”
+Nobody stops you to link using /DELAYLOAD:‹your.dll› and put the call of LoadLibraryEx() into your own __delayLoadHelper2() routine!
+
+
+
+
+Rosyna Keller  March 19, 2025
+
+
+  0  Collapse this comment
+Copy link
+The way this is presented, this doesn’t sound like a security issue, it sounds more like a developer wanting to avoid DLL Hell.
+This would especially be a problem if they’re using a third-party DLL that is installed by multiple apps and the user decides to move only the .exe to another location, not realizing the DLL is a necessary component, thereby causing extremely weird (possibly indeterminate) crashes if it happens to grab a DLL from another app’s install that incorrectly installed it on a global search path.
+While a security feature could fix this usability issue (loading only DLLs signed by...Read moreThe way this is presented, this doesn’t sound like a security issue, it sounds more like a developer wanting to avoid DLL Hell.
+This would especially be a problem if they’re using a third-party DLL that is installed by multiple apps and the user decides to move only the .exe to another location, not realizing the DLL is a necessary component, thereby causing extremely weird (possibly indeterminate) crashes if it happens to grab a DLL from another app’s install that incorrectly installed it on a global search path.
+While a security feature could fix this usability issue (loading only DLLs signed by Microsoft and the exe’s signer), it’s just for the usability issue.
+Although I am surprised to learn DLLs can’t embed their own search path when they’re linked to an executable without modifying the global search paths.
+Read less
+
+
+
+
+
+
+
+Stefan Kanthak  March 23, 2025
+
+
+  0  Collapse this comment
+Copy link
+Security left aside it is possible with an XML snippet <file loadFrom="%__APPDIR__%‹filename.dll›" name="‹unqualified filename from import directory›"> placed in the applications manifest.
+
+
+
+
+
+Stefan Kanthak  March 23, 2025
+· Edited
+
+  0  Collapse this comment
+Copy link
+"Although I am surprised to learn DLLs can’t embed their own search path when they’re linked to an executable without modifying the global search paths."
+Please inform yourself about Activation Contexts and how these are derived from Application Manifests or Assembly Manifests.
+Additionally pay a look at the "LOAD_WITH_ALTERED_SEARCH_PATH" flag.
+Read more“Although I am surprised to learn DLLs can’t embed their own search path when they’re linked to an executable without modifying the global search paths.”
+Please inform yourself about Activation Contexts and how these are derived from Application Manifests or Assembly Manifests.
+Additionally pay a look at the “LOAD_WITH_ALTERED_SEARCH_PATH” flag.
+Read less
+
+
+
+
+
+
+Flux  March 17, 2025
+· Edited
+
+  0  Collapse this comment
+Copy link
+The customer request is less about security and more about preventing collateral loading.
+Imagine a user who installs App A, but during installation, chooses Custom Setup, and opts not to install ffmpeg.dll (or component that includes ffmpeg.dll). FFmpeg, however, is a popular free and open-source solution. Many different apps may ship with custom copies of ffmpeg.dll. It is reasonable to assume that one such app, say App B, comes with an incompatible copy of ffmpeg.dll that App A wouldn’t want to load.
+
+
+
+
+
+Cole Tobin  March 18, 2025
+· Edited
+
+  0  Collapse this comment
+Copy link
+If ffmpeg.dll is required for functionality, the installer shouldn’t give the user the option to not install it. This is Windows, not Linux. If you need a DLL, provide it yourself. However, if the ffmpeg.dll requiring component is optional, the installer should leave a note for the application to not allow that functionality. Your scenario isn’t a Windows problem, but an installer/application bug.
+
+
+
+
+Tom Mason  March 15, 2025
+
+
+  0  Collapse this comment
+Copy link
+I've had a somewhat legitimate reason for this before. We were shipping a copy of a newer version of onnxruntime.dll than was included in windows at the time. We got some crash reports that didn't make sense, so we added some code to log the md5 sum of the onnxruntime.dll that we had loaded. Sure enough, the md5 didn't match. We never did figure out why it was loading the wrong one (only for a tiny minority of users, I might add), but explicitly loading it using LoadLibraryW and the full path fixed the issue. Luckily onnxruntime already uses the...Read moreI’ve had a somewhat legitimate reason for this before. We were shipping a copy of a newer version of onnxruntime.dll than was included in windows at the time. We got some crash reports that didn’t make sense, so we added some code to log the md5 sum of the onnxruntime.dll that we had loaded. Sure enough, the md5 didn’t match. We never did figure out why it was loading the wrong one (only for a tiny minority of users, I might add), but explicitly loading it using LoadLibraryW and the full path fixed the issue. Luckily onnxruntime already uses the “one public function that returns a struct full of function pointers” approach, so it wasn’t too painful to migrate. In summary, I’d say for overriding dlls included in the os, or if you’re stuck for some reason with dlls that have a very generic name that might be used by something else in the future (eg “code.dll”), then it makes sense to be worried about restricting the load path. Not for security though, just good old fashioned bugs :p
+Read less
+
+
+
+
+
+
+
+Shawn Van Ness  March 14, 2025
+
+
+  0  Collapse this comment
+Copy link
+My guess:  this is less about security, more about reliability and supportability -- I've seen this flavor of DLL-hell with libraries like DbgHelp.dll, which have changed a lot over the past 20 years, in binary-incompatible ways, but are used and redist'ed fairly ubiquitously -- including by other DLLs you may end up loading, directly or indirectly (thinking of things like FPS counters and VR/XR frameworks).
+It's tough when your app crashes due to an incompatible DLL conflict, and even tougher when it's your crash-handler that's crashing because it can't use DbgHelp.dll to log a stack trace, so your customer has...Read moreMy guess:  this is less about security, more about reliability and supportability — I’ve seen this flavor of DLL-hell with libraries like DbgHelp.dll, which have changed a lot over the past 20 years, in binary-incompatible ways, but are used and redist’ed fairly ubiquitously — including by other DLLs you may end up loading, directly or indirectly (thinking of things like FPS counters and VR/XR frameworks).
+It’s tough when your app crashes due to an incompatible DLL conflict, and even tougher when it’s your crash-handler that’s crashing because it can’t use DbgHelp.dll to log a stack trace, so your customer has no logs to share.
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  March 14, 2025
+
+
+  0  Collapse this comment
+Copy link
+That doesn’t work _at all_.
+I filed a vulnerability report after discovering that User32.dll loads additional DLLs dynamically and throws out the value of /DEPENDENTLOADFLAG that the application was linked with. The vulnerability got rejected. So we live in the world where you can’t restrict the DLL load order for security.
+
+
+
+
+
+Stefan Kanthak  March 23, 2025
+
+
+  0  Collapse this comment
+Copy link
+Ask your administrator to configure SAFER, AppLocker or WDAC for “write XOR execute” in the (NTFS) filesystem.
+
+
+
+Mike Morrison  March 14, 2025
+
+
+  1  Collapse this comment
+Copy link
+The application bundle is responsible only for the bundle.  The app isn’t responsible for insecure system configurations outside the bundle that were not made by the app or installer itself.  I don’t see why apps shouldn’t harden their DLL loading (and the directory permissions) due to the possibility of insecure configs outside of the bundle.

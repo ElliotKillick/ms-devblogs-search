@@ -1,0 +1,199 @@
+wm w  November 6, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+Interesting!
+Based on your example, I came up with the following alternative for `hide_name`:
+<code>
+This uses a 'voldemort type' with deleted constructors/assignment to ensure that there is nothing useful we can do with the type.
+While calling this does require the usage of parentheses and does not allow shadowing multiple things at once
+(although a variadic macro that does that could be added if you really want), the compiler errors are a lot more readable than with `hide_name`.
+The only test this does not prevent, is the `sizeof(a)` one.
+------
+The alternative which some people noted where it would be nicer to make a copy...Read moreInteresting!
+Based on your example, I came up with the following alternative for `hide_name`:
+#define shadow(val) [[maybe_unused]] auto val = [](){ \
+        struct shadowed_name{ \
+            shadowed_name() = default; \
+            shadowed_name(const shadowed_name&) = delete; \
+            shadowed_name& operator= (const shadowed_name&) = delete; \
+        }; \
+        return shadowed_name{}; \
+    }()
+This uses a ‘voldemort type’ with deleted constructors/assignment to ensure that there is nothing useful we can do with the type.
+While calling this does require the usage of parentheses and does not allow shadowing multiple things at once
+(although a variadic macro that does that could be added if you really want), the compiler errors are a lot more readable than with `hide_name`.
+The only test this does not prevent, is the `sizeof(a)` one.
+——
+The alternative which some people noted where it would be nicer to make a copy directly rather than hiding the name combined with introducing a new name, might be implemented as follows:
+#define NAME_CONCAT_IMPL(a, b) a ## b
+#define NAME_CONCAT(a, b) NAME_CONCAT_IMPL(a, b)
+#define co_safe_capture(val) auto NAME_CONCAT(temp, __LINE__){val}; auto val{NAME_CONCAT(temp, __LINE__)};
+
+This could then be called, using one of your examples, like so:
+
+void RegisterClickHandler(Button const& button, int key)
+{
+    button.Click([key](auto&&, auto&&)
+        -> winrt::fire_and_forget
+        {
+            co_safe_capture(key);
+            co_await winrt::resume_background();
+            NotifyClick(key); // want this to be an error
+        });
+}
+
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+November 9, 2021
+
+
+  0  Collapse this comment
+Copy link
+The `shadow()` macro does have another hole: I can accidentally do memcpy(&val, new_value, sizeof(new_value)); and corrupt memory. Using a function type avoids this problem because function pointers cannot be implicitly cast to data pointers.
+Your co_safe_capture could be ... auto& val{...}; to avoid a second copy.
+
+
+
+
+Neil Rashbrook  November 5, 2021
+
+
+  0  Collapse this comment
+Copy link
+auto p = a + 1; looks like an ICC bug; it generates the same code as it does for auto p = a; (according to my basic testing on godbolt).
+
+
+
+
+
+Raymond Chen Author
+November 5, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+I see the +1. But sometimes it's not there. Very strange.
+Read moreI see the +1. But sometimes it’s not there. Very strange.
+Read less
+
+
+
+
+
+
+Kevin Norris  November 4, 2021
+
+
+  0  Collapse this comment
+Copy link
+GCC specifies “ISO C++” because they support sizeof(function) as a language extension: https://gcc.gnu.org/onlinedocs/gcc/Pointer-Arith.html#Pointer-Arith
+So yes, GCC really will totally let you get away with that, if you just pass the appropriate “please let me get away with it” flag.
+
+
+
+
+
+Stuart Ballard  November 4, 2021
+
+
+  1  Collapse this comment
+Copy link
+I’m guessing there’s some reason why you can’t just use the copy you’re already creating to do the hiding?
+void RegisterClickHandler(Button const& button, int key)
+{
+    button.Click([key](auto&&, auto&&)
+        -> winrt::fire_and_forget
+        {
+            auto key = key;
+            co_await winrt::resume_background();
+            NotifyClick(key);
+        });
+}
+
+
+
+
+
+Neil Rashbrook  November 5, 2021
+
+
+  0  Collapse this comment
+Copy link
+I think there are some languages such as LISP that do let you do something similar (in LISP it would be something like (let ((foo foo)) (...))).
+
+
+
+
+
+紅樓鍮  November 5, 2021
+
+
+  0  Collapse this comment
+Copy link
+I think most functional (or modern) languages allow it.  let input = sanitize input is a widely taught idiom in OCaml.
+
+
+
+
+Jacob Manaker  November 4, 2021
+
+
+  1  Collapse this comment
+Copy link
+In
+auto key=key;
+ the right-hand key refers to the new variable you’re defining.  (I recently ran into this teaching my students.)  On the bright side, this allows you to use the size of a variable in its creation:
+DRAWTEXTPARAMS params = { sizeof(params), /*other values omitted*/ };
+
+
+
+
+
+Harry Johnston  November 4, 2021
+· Edited
+
+  1  Collapse this comment
+Copy link
+The obvious thing to try instead would be
+auto temp = key;
+auto key = temp;
+and I would assume the compiler would optimize away the extra variable?
+(Maybe not, for non-trivial classes.  C++ is too complicated for me.)
+
+
+
+
+
+Henry Skoglund  November 4, 2021
+
+
+  0  Collapse this comment
+Copy link
+Hi, think this could work:
+auto key(key);
+
+
+
+
+
+Stuart Ballard  November 4, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+Good old C++, where there's always a syntax rule to make impossible things easy and easy things impossible. I'm assuming that the end result of the rule you describe is that <code> won't even compile because of infinite recursion in deriving the implicit type.
+From my outsider's knowledge of C++ I'm scratching my head trying to figure out if there's some weird trick to get the equivalent result, but having followed this blog for a while, I imagine that if there is it requires a bunch of obscure template black magic, especially if you want to cover every possible type. I'm...Read moreGood old C++, where there’s always a syntax rule to make impossible things easy and easy things impossible. I’m assuming that the end result of the rule you describe is that
+auto key = key;
+ won’t even compile because of infinite recursion in deriving the implicit type.
+From my outsider’s knowledge of C++ I’m scratching my head trying to figure out if there’s some weird trick to get the equivalent result, but having followed this blog for a while, I imagine that if there is it requires a bunch of obscure template black magic, especially if you want to cover every possible type. I’m imagining some fantastical sorcery where the value becomes part of the declared datatype so it can appear *before* the newly-declared name to get the right scope!
+capture_the_value_of<key> key;
+Read less

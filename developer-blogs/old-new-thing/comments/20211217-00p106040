@@ -1,0 +1,82 @@
+Henke37  December 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+Doesn’t fibers and such involve messing with the stack layout? Oh well, they are all in cohorts anyway.
+
+
+
+
+
+Antonio Rodríguez  December 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+"Now, you (the person who wants to extract every last drop out of your stack before it overflows) might say, “Well, the kernel could just allocate a special emergency stack for stack overflow exceptions.”"
+Above that, it would be a big contradiction. You want to squeeze those extra 12 KB at the end of your memory-hungry stacks. Well, allocating an emergency stack of at least 12 KB for *every* thread on the system would waste more memory by definition, because most threads wouldn't need it. And if it's an emergency stack for processing exceptions, maybe it should be committed at thread...Read more“Now, you (the person who wants to extract every last drop out of your stack before it overflows) might say, “Well, the kernel could just allocate a special emergency stack for stack overflow exceptions.””
+Above that, it would be a big contradiction. You want to squeeze those extra 12 KB at the end of your memory-hungry stacks. Well, allocating an emergency stack of at least 12 KB for *every* thread on the system would waste more memory by definition, because most threads wouldn’t need it. And if it’s an emergency stack for processing exceptions, maybe it should be committed at thread creation, because otherwise, on low memory situations, it could lead to a “domino effect” where threads would start to fail hard with exceptions which could not be processed. In no time, the system would be unstable and unresponsive.
+In other words, for a typical system with thousands of threads, you would end wasting tens or hundreds of megabytes of memory to handle an edge case. All because your process wanted to squeeze an extra 12 KB. *That* is inefficient.
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  December 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+On a completely unrelated note, it’s not documented anywhere how much stack you’re supposed to leave for kernel functions (kernel32.dll, advapi32.dll). This comes up quite a bit when the plan is to allocate hundreds of KB of RAM on the worker thread stack because it’s faster than heap allocation and trivially provable that it’s leak free. I’ve been assuming 32KB is enough (including the frames below the start of thread entry — now why that’s more than 1 dword on x86 or 5 qwords on x64 (calling convention) is anybody’s guess).
+
+
+
+
+
+Antonio Rodríguez  December 17, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+I suppose it's not documented because it's an implementation detail. If they said "32 KB" now, and then needed to grow it later (say, in Windows 12 they introduce Win128, where WOW64 runs under WOW128 :-P ), they would have their hands tied.
+This is one of these cases where if you have to ask where the limit is, you are doing something wrong (like thread number or filesystem handles limits). Stack allocation can be convenient, but you should use it wisely: do not allocate on the stack in recursive functions, and limit it to small chunks (the ones that work...Read moreI suppose it’s not documented because it’s an implementation detail. If they said “32 KB” now, and then needed to grow it later (say, in Windows 12 they introduce Win128, where WOW64 runs under WOW128 😛 ), they would have their hands tied.
+This is one of these cases where if you have to ask where the limit is, you are doing something wrong (like thread number or filesystem handles limits). Stack allocation can be convenient, but you should use it wisely: do not allocate on the stack in recursive functions, and limit it to small chunks (the ones that work worst with heap allocations). To me, “hundreds of KB” does not sound so small, at least for a stack allocation.
+Read less
+
+
+
+
+
+
+
+Joshua Hudson  December 17, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+I’m already calling CreateThread() and telling it how much stack to allocate because I know how much that thread’s going to use (and it’s more than the default value). What more do you want?
+Hands are tied anyway; it just without documenting a reserve value they’re tied empirically by whoever took the lowest guess that worked.
+
+
+
+
+
+紅樓鍮  December 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+Can’t you use VirtualAlloc?  I think if you ask the heap manager for some hundred KBs it will pass your request directly to VirtualAlloc anyways (20110930-00/?p=9513).
+
+
+
+Joshua Hudson  December 17, 2021
+
+
+  0  Collapse this comment
+Copy link
+I do recall one system that had emergency stack, and it worked rather differently. All kernel-mode callbacks were raised on it including stackoverflow. Guess what happened if you overflowed the emergency stack. (I never found out but probably just dead.) This did have an upside of trivial red-zone though. The emergency stack was pretty small; you were supposed to set some flags and potentially call longjmp() to get out of there or exit() to terminate.

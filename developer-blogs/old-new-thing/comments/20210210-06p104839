@@ -1,0 +1,54 @@
+Neil Rashbrook  February 11, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+Is there a pattern whereby while Thread 1 is waiting for that lock, it’s still able to process cross-thread operations? (Something along the lines of a thread waiting for a thread to reply to SendMessage can itself still be the target of a SendMessage call.)
+
+
+
+
+
+Raymond Chen Author
+February 11, 2021
+
+
+  0  Collapse this comment
+Copy link
+That’s reentrancy and is even scarier. Furthermore, if the caller of GetSingletonThing() holds a lock, you now have wild lock inversion.
+
+
+
+
+Bwmat  February 10, 2021
+
+
+  0  Collapse this comment
+Copy link
+My preference for this kind of thing is to take the lock, and if the object hasn’t been created yet, leave a record that I’m about to create it, drop the lock, create it, and then take the lock, put it in, and drop it again for the last time.
+Any other thread that tries to get the object can see that someone else is creating it, and wait (ideally using something like a condition variable)
+
+
+
+
+
+Raymond Chen Author
+February 11, 2021
+
+
+  0  Collapse this comment
+Copy link
+That really just trades the problem for an identical problem: You just renamed “wait for m_lock” to “wait for creator via condition variable”.
+
+
+
+
+
+Ian Yates  February 10, 2021
+
+
+  0  Collapse this comment
+Copy link
+Good approach
+Similar to C# where people use a ConcurrentDictionary for this job, but to avoid double construction you use Lazy rather than just T. Creating the Lazy is cheap and quick and serves as the place holder. It has its own options then about allowing a race to initialise or not.
+Only issue is that it caches the Exception raised by the constructor if one was thrown rather than being allowed to try again. All depends on how you’d want that to behave – can of worms but worth understanding to avoid the corner cases that will eventually occur

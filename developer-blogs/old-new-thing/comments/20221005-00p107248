@@ -1,0 +1,76 @@
+Pavel Kostromitinov  October 7, 2022
+
+
+  0  Collapse this comment
+Copy link
+There are versions of mutexes which are quite happy with double locking, std::recursive_mutex as a prime example.
+Yes, I know that it comes with additional overhead, but for less performance-sensitive applications its usage can be justified.
+For me personally it also comes with additional benefit of easier debugging, since it contains id of owner thread.
+
+
+
+
+
+Zenju Z  October 7, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Easy-peasy with no footguns or complexity, no?
+std::synchronized_value
+https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rconc-mutex
+
+
+
+
+
+Raymond Chen Author
+October 7, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+It is significantly more complex: Instead of a simple a->b = c it’s a.apply([&](auto& v) { return v = c; }). It also does not remove the footgun. Just moves it to another place: info.apply([&] (auto& v) { v.times_toggled = calculate_times_toggled(info); }); If calculate_times_toggled also calls info.apply() then you deadlock.
+
+
+
+
+Neil Rashbrook  October 6, 2022
+
+
+  0  Collapse this comment
+Copy link
+After seeing auto lock = info.Lock(); return lock->name; my mind jumped straight to return info.Lock()->name; without trying to oversimplify it to return info->name;. Is this good or bad?
+
+
+
+
+
+Markus Schaber  October 6, 2022
+
+
+  0  Collapse this comment
+Copy link
+If you want to see a more elegant, language integrated version of this kind of mechanism, check Rust: https://www.rust-lang.org/ 🙂
+
+
+
+
+
+Gunnar Dalsnes  October 6, 2022
+
+
+  0  Collapse this comment
+Copy link
+I guess any language that does not allow operator overloading (except for comparison) would be more elegant:-) Operator overloading is the best tool to shoot oneself in the feets.
+
+
+
+
+MGetz  October 5, 2022
+
+
+  0  Collapse this comment
+Copy link
+Fun fact: don't use  across a coroutine suspend. This should be intuitive it's a footgun... but I still managed to do it because I assumed compiler magic. There was no magic... just an empty pointer and a memory leak. This is because again  is a temporary and doesn't live across the scope so its destructor is called before the value is emplaced because temporaries are destructed (reasonably if you think about it) prior to the suspend. Thus the  is always filled with a , because that's what's in the  when it's destructed. While it would be...Read moreFun fact: don’t use out_ptr across a coroutine suspend. This should be intuitive it’s a footgun… but I still managed to do it because I assumed compiler magic. There was no magic… just an empty pointer and a memory leak. This is because again out_ptr is a temporary and doesn’t live across the scope so its destructor is called before the value is emplaced because temporaries are destructed (reasonably if you think about it) prior to the suspend. Thus the unique_ptr is always filled with a nullptr, because that’s what’s in the out_ptr when it’s destructed. While it would be nice to have some way to give a compiler diagnostic or static code analysis diagnostic I’m not sure how one would go about that.
+Read less

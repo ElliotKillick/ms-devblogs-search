@@ -1,0 +1,52 @@
+Joe Beans  October 16, 2024
+
+
+  0  Collapse this comment
+Copy link
+Doesn’t this whole question go under the “It rather involved being on the other side of this airtight hatchway” category?  I mean you’re already inside the process with full access to all of the address space…
+
+
+
+
+
+Chris Iverson  October 16, 2024
+
+
+  0  Collapse this comment
+Copy link
+That’s not necessarily the case.
+If you’re attacking a process by taking advantage of a remote buffer overflow, for example, you don’t have “full access to all of the address space”.
+You have access to the buffer, and have access to where the buffer overflows to if you overflow it.
+Protections like these prevent being able to turn that buffer overflow into remote code execution, by preventing the use of the corrupted return address.
+
+
+
+
+Joshua Hudson  October 15, 2024
+
+
+  0  Collapse this comment
+Copy link
+We can do better than that.
+1) Use call/ret as normal
+2) rbp initially refers to top of argument stack and grows downwards
+3) On function entry, reserve entire stack frame including argument space by subtracting that amount from rbp
+4) On function exit, add it back
+Buffer overruns will only corrupt the argument stack and won’t ever corrupt the real stack, which is only used for call and return.
+All of the variants have the same problem: what happens when you call a function that isn’t in on the game?
+
+
+
+
+
+Csaba Varga  October 15, 2024
+· Edited
+
+  0  Collapse this comment
+Copy link
+Yes, having separate stacks for data and return addresses fixes the issue, but it will confuse debuggers and similar tools that expect the two to be interleaved. A shadow stack will keep compatibility with things that only read the stack and don't try to manipulate return addresses.
+All of the variants have the same problem: what happens when you call a function that isn’t in on the game?
+With the parallel approach, nothing much. The function that isn't on the game will not be protected, of course, but since it has no reason to read or write the special segment register, it...Read moreYes, having separate stacks for data and return addresses fixes the issue, but it will confuse debuggers and similar tools that expect the two to be interleaved. A shadow stack will keep compatibility with things that only read the stack and don’t try to manipulate return addresses.
+All of the variants have the same problem: what happens when you call a function that isn’t in on the game?
+With the parallel approach, nothing much. The function that isn’t on the game will not be protected, of course, but since it has no reason to read or write the special segment register, it won’t interfere with the scheme. In the compact approach, there is a good chance that the “unaware” function will clobber the general-purpose register. Even if you pick a callee-save register, the “unaware” function can clobber it temporarily and call another function while the register is changed, breaking the scheme.
+Read less

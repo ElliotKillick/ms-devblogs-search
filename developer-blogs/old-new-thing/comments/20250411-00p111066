@@ -1,0 +1,255 @@
+Igor Levicki
+
+1 day ago
+
+  0  Collapse this comment
+Copy link
+@Joshua Hudson
+> Process debugging itself is surprisingly natural once you’ve done it once.
+Seems to me you have no idea how to write code.
+> I tried to build a garbage collector that worked like that. The only reason it didn’t work is it needed prolog/epilog tables, and then x64 came along and made prolog/epilog tables a thing anyway.
+Or you could have, you know, just used a garbage collected language like C#? No? Then how about not forgetting to free allocated stuff? It's a solved problem.
+> This is about 200 lines of code (because it can’t call malloc or stdio) and...Read more@Joshua Hudson
+> Process debugging itself is surprisingly natural once you’ve done it once.
+Seems to me you have no idea how to write code.
+> I tried to build a garbage collector that worked like that. The only reason it didn’t work is it needed prolog/epilog tables, and then x64 came along and made prolog/epilog tables a thing anyway.
+Or you could have, you know, just used a garbage collected language like C#? No? Then how about not forgetting to free allocated stuff? It’s a solved problem.
+> This is about 200 lines of code (because it can’t call malloc or stdio) and is otherwise actually simpler than attaching to another process and less likely to set off a virus scanner. The only wrinkle is as this customer discovered, getting a stacktrace inside kernel32.dll is broken. Solving it for your own dlls is easy; we just have to annotate the calls to outside functions.
+The point that you keep missing is — if you have to write a watchdog to collect stack traces of your UI thread to check for it becoming unresponsive then you are already doing something wrong on the UI thread and you should be fixing that, not adding another thing you shouldn’t be doing in Windows and that is debugging your own process from within.
+> Hint: There is no suspend process, only suspend thread.
+NtSuspendProcess in ntdll.dll. Try harder.
+Read less
+ Log in to Vote or Reply
+
+
+
+
+
+
+Steve
+
+4 days ago
+
+  0  Collapse this comment
+Copy link
+"you don’t want that to block thread suspension, because that would let a program make itself un-suspendable" - There are some well documented cases and code examples of processes and threads making themselves immune to suspension via SuspendThread. For example a program can avoid suspension by calling CreateThread in a loop and calling ResumeThread for it's own threads creating a race condition between itself and other processes trying to suspend the thread or process as one example, not to mention remote threads injected by other software prevent suspending a process. The MSDN documentation has a page named "Controlling Processes and...Read more“you don’t want that to block thread suspension, because that would let a program make itself un-suspendable” – There are some well documented cases and code examples of processes and threads making themselves immune to suspension via SuspendThread. For example a program can avoid suspension by calling CreateThread in a loop and calling ResumeThread for it’s own threads creating a race condition between itself and other processes trying to suspend the thread or process as one example, not to mention remote threads injected by other software prevent suspending a process. The MSDN documentation has a page named “Controlling Processes and Threads” and recommends using the newer ‘freeze’ functionality included with newer versions of Windows when debugging using ~f and ~u since it fixes a number of issues with suspension and especially important while debugging.
+Read less
+ Log in to Vote or Reply
+
+
+
+
+
+
+Arben Tapia  April 17, 2025
+
+
+  0  Collapse this comment
+Copy link
+This is great analysis Raymond. I am just peeved by a similar problem but my bet is on Windows Explorer. This is the google query/rant I wrote before I remembered the wonderful “The Old New Thing” of yours (which I have not visited for a long time):
+“Why is windows explorer so crappy so it can not sort even an small list of files while is doing some copying?”
+Do you think these issues might be related? Thanks!
+
+ Log in to Vote or Reply
+
+
+
+
+
+
+Ivan Kljajic
+
+6 days ago
+
+  0  Collapse this comment
+Copy link
+Wouldn’t that be like reintroducing cooperative multitasking to Windows?
+
+ Log in to Vote or Reply
+
+
+
+
+
+
+Doug Nebeker  April 15, 2025
+
+
+  0  Collapse this comment
+Copy link
+It seems to me that the proposed functions would let any user mode program hang the kernel.  The loader lock does cause some pain but I’m sure it’s not there because the Windows devs are dumb or stubborn.
+
+ Log in to Vote or Reply
+
+
+
+
+
+
+Sigge Mannen  April 15, 2025
+· Edited
+
+  0  Collapse this comment
+Copy link
+I like the fact that customer is having problems with a hanging thread, but fail to mention out of the gates that they’re using nuclear code like SuspendThread in their application. And also that the Watchdog thread actually made things… less responsive, cue the star wars meme
+
+ Log in to Vote or Reply
+
+
+
+
+
+
+Joshua Hudson
+
+1 week ago
+
+  0  Collapse this comment
+Copy link
+No, Raymond. Microsoft did this one to themselves. This problem comes up repeatedly in different contexts.
+The actual problem is despite over twenty years of problems caused by the loader lock being inaccessible, Microsoft has neither learned nor listened. Having an inaccessible lock in the middle of the lock graph is not sound engineering.
+Microsoft can solve this entire class with two methods:
+1) BOOL AcquireLoaderLock(BOOL *acquired);
+2) void ReleaseLoaderLock();
+And then every time somebody has to do something wild they can take the loader lock and make sure this nonsense doesn't happen.
+I'm pretty sure this just works here because nothing should be able...Read moreNo, Raymond. Microsoft did this one to themselves. This problem comes up repeatedly in different contexts.
+The actual problem is despite over twenty years of problems caused by the loader lock being inaccessible, Microsoft has neither learned nor listened. Having an inaccessible lock in the middle of the lock graph is not sound engineering.
+Microsoft can solve this entire class with two methods:
+1) BOOL AcquireLoaderLock(BOOL *acquired);
+2) void ReleaseLoaderLock();
+And then every time somebody has to do something wild they can take the loader lock and make sure this nonsense doesn’t happen.
+I’m pretty sure this just works here because nothing should be able to acquire the function table lock exclusively without first acquiring the loader lock; otherwise the lock graph would have a cycle.
+Read less
+ Log in to Vote or Reply
+
+
+
+
+
+
+Raymond Chen Author  1 day ago
+
+  1  Collapse this comment
+Copy link
+The loader lock is not involved in this deadlock. The loader lock is not held. The problem is with the function table lock, not the loader lock. The problem is that taking a stack trace requires the function table lock, so you are in trouble if you suspend a thread while it also happens to hold the function table lock.
+
+ Log in to Vote or Reply
+
+
+
+
+
+
+Steve
+
+4 days ago
+
+  0  Collapse this comment
+Copy link
+I've debugged a lot of software and seen a lot of issues over the last 20 years but the loader lock has never been a problem?
+Your "Microsoft can solve this" idea by using try/acquire/release semantics with the loader lock is exactly what Windows NT has been doing for +30 years. Windows 2000 and XP had a single function used for the loader lock and does the 'try/acquire' part using the TryEnterCriticalSection function and 'release' using the LeaveCriticalSection with the address of loader lock - versions of Windows after XP probably have lots of changes but essentially the same.
+Read moreI’ve debugged a lot of software and seen a lot of issues over the last 20 years but the loader lock has never been a problem?
+Your “Microsoft can solve this” idea by using try/acquire/release semantics with the loader lock is exactly what Windows NT has been doing for +30 years. Windows 2000 and XP had a single function used for the loader lock and does the ‘try/acquire’ part using the TryEnterCriticalSection function and ‘release’ using the LeaveCriticalSection with the address of loader lock – versions of Windows after XP probably have lots of changes but essentially the same.
+Read less
+ Log in to Vote or Reply
+
+
+
+
+
+
+Chris Sarbora  April 17, 2025
+
+
+  0  Collapse this comment
+Copy link
+What does any particular lock at all have to do with this? The situations appears to be the following:
+<code>
+The problem is not any sort of WINAPI lock ordering, it's that the application is making assumptions about object consistency that it cannot make in an asynchronous-interruption state. This could be equally invalid without any locks at all:
+<code>
+The problem is not the loader lock availability, it's that the application is violating its own concurrency expectations.
+Read moreWhat does any particular lock at all have to do with this? The situations appears to be the following:
+// UI Thread
+// .. la di da, just ui thread things ..
+{
+  std::unique_lock lock{gFooMutex};
+  gFoo = doSomeStuffLocked();
+  // GOT SUSPENDED
+  doSomeOtherStuffLocked(gFoo);
+} // release gSomeMutex
+
+// Watchdog Thread
+std::unique_ptr GetStacktrace(Thread target)
+{
+  std::unique_ptr trace;
+  SuspendThread(target);
+  {
+    std::shared_lock lock{gSomeMutex}; // ruh roh
+    trace = CreateTrace(target, gFoo); // y i am dedlock?
+  }
+  ResumeThread(target);
+  return trace;
+}
+The problem is not any sort of WINAPI lock ordering, it’s that the application is making assumptions about object consistency that it cannot make in an asynchronous-interruption state. This could be equally invalid without any locks at all:
+// UI Thread
+// .. la di da, just ui thread things ..
+{
+  gFoo.Length = newLength; // old Length < newLength
+  // GOT SUSPENDED
+  gFoo.Data = newDataPtr;
+}
+
+// Watchdog Thread
+std::unique_ptr GetStacktrace(Thread target)
+{
+  SuspendThread(target);
+  std::unique_ptr trace = CreateTrace(target, gFoo.Data, gFoo.Length); // y i am crash??
+  ResumeThread(target);
+  return trace;
+}
+The problem is not the loader lock availability, it’s that the application is violating its own concurrency expectations.
+Read less
+ Log in to Vote or Reply
+
+
+
+
+
+
+Igor Levicki
+
+1 week ago· Edited
+
+  2  Collapse this comment
+Copy link
+Sorry, but I am with Raymond on this one.
+> And then every time somebody has to do something wild...
+Someone doing something wild (stupid?) is how we got here in the first place, with the wild thing in this case being "process trying to debug itself" (or "watchdog living inside the thing it is supposed to be watching" if the first explanation didn't trigger alarms for you).
+What would solve the problem is customer using external watchdog process to monitor UI thread -- post a custom WM_HEARTBEAT message to UI thread every second and if it doesn't respond suspend the whole process...Read moreSorry, but I am with Raymond on this one.
+> And then every time somebody has to do something wild…
+Someone doing something wild (stupid?) is how we got here in the first place, with the wild thing in this case being “process trying to debug itself” (or “watchdog living inside the thing it is supposed to be watching” if the first explanation didn’t trigger alarms for you).
+What would solve the problem is customer using external watchdog process to monitor UI thread — post a custom WM_HEARTBEAT message to UI thread every second and if it doesn’t respond suspend the whole process and create a minidump instead of fiddling with function table locks and UI thread stack traces.
+Access to loader lock has nothing to do with this.
+Read less
+ Log in to Vote or Reply
+
+
+
+
+
+
+Joshua Hudson
+
+7 days ago
+
+  0  Collapse this comment
+Copy link
+"process trying to debug itself"
+Seems far more reasonable to me than the last time I had to reach for SuspendThread. Process debugging itself is surprisingly natural once you've done it once. I tried to build a garbage collector that worked like that. The only reason it didn't work is it needed prolog/epilog tables, and then x64 came along and made prolog/epilog tables a thing anyway.
+"watchdog living inside the thing it is supposed to be watching"
+This is about 200 lines of code (because it can't call malloc or stdio) and is otherwise actually simpler than attaching to another process and less...Read more“process trying to debug itself”
+Seems far more reasonable to me than the last time I had to reach for SuspendThread. Process debugging itself is surprisingly natural once you’ve done it once. I tried to build a garbage collector that worked like that. The only reason it didn’t work is it needed prolog/epilog tables, and then x64 came along and made prolog/epilog tables a thing anyway.
+“watchdog living inside the thing it is supposed to be watching”
+This is about 200 lines of code (because it can’t call malloc or stdio) and is otherwise actually simpler than attaching to another process and less likely to set off a virus scanner. The only wrinkle is as this customer discovered, getting a stacktrace inside kernel32.dll is broken. Solving it for your own dlls is easy; we just have to annotate the calls to outside functions.
+Hint: There is no suspend process, only suspend thread.
+Read less

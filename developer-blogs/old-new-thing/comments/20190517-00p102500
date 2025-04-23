@@ -1,0 +1,111 @@
+Martin Mitáš  June 5, 2019
+
+
+  0  Collapse this comment
+Copy link
+I fully agree system crashes can be (from app POV) in most cases treated as events that simply never occur. It isn't responsibility of any user space app to guarantee stability of the system as a whole.
+But writing some data to external/unplugguble device or a remote filesystem living somewhere on a network are not in that category. So the question how the app can know whether it successfully got the data to the destination is still relevant even when we take system crashes out of the equation.
+Is there a reasonable way how to reliably detect when such a...Read moreI fully agree system crashes can be (from app POV) in most cases treated as events that simply never occur. It isn’t responsibility of any user space app to guarantee stability of the system as a whole.
+But writing some data to external/unplugguble device or a remote filesystem living somewhere on a network are not in that category. So the question how the app can know whether it successfully got the data to the destination is still relevant even when we take system crashes out of the equation.
+Is there a reasonable way how to reliably detect when such a problem happens (1) without knowing any details about the target filesystem and (2) without any slowdown due the synchronized output?
+Read less
+
+
+
+
+
+
+
+cheong00  May 19, 2019
+
+
+  0  Collapse this comment
+Copy link
+Actually the “cure” is to use externally powered storage, so even when there’s unexpected shutdown, the cached data on storage device would still be written to disk.
+If you have unstable power, then you probably want to know that UPS is a thing.
+
+
+
+
+
+Ben Voigt  May 20, 2019
+
+
+  0  Collapse this comment
+Copy link
+That only helps if the data is in the disk-side cache.  Raymond’s talking about caching in system RAM, not the disk-side cache (we know because 1 GB and larger files can’t fit disk-side)
+
+
+
+
+
+cheong00  May 20, 2019
+
+
+  0  Collapse this comment
+Copy link
+When you use external storage with large buffer and independent power (such as SAN), the recommandation is always to disable write cache to minimize the possibility of data lost. With those 15k RPM SCSI disk (which also has buffer itself) running RAID 10, you’d rarely find the performance bottleneck on the storage side.
+
+
+
+Dimitrios Kalemis  May 17, 2019
+
+
+  0  Collapse this comment
+Copy link
+You write: ” On the other hand, if the reboots through the normal shutdown-and-reboot process, then the cache will be written out as part of the shutdown.”
+I have a question about that. Is what you wrote always true? If during the normal shutdown process (for some reason, like the hardware being too slow at the sector level access) the cache takes too long to be written out, then Windows will kill the cache-writting-out-process (in order for the shutdown to continue). If such a thing happens, then even the normal shutdown process is not a guarantee. What is your opinion?
+
+
+
+
+
+Simon Farnsworth  May 20, 2019
+
+
+  0  Collapse this comment
+Copy link
+Windows won’t kill the cache flush. It will be allowed to finish no matter how long it takes, unless the user reboots in the middle of the cache flush manually (e.g. by pulling the power cable because it’s taking too long, or because the battery goes flat).
+As long as everything is under software control, a standard shutdown will write out the entire cache as part of the process.
+
+
+
+
+
+toasterking  May 20, 2019
+
+
+  0  Collapse this comment
+Copy link
+But even if Windows does not kill the cache flush, a server with a hardware watchdog timer could reset the system if the shutdown takes too long.
+
+
+
+
+
+Simon Farnsworth  May 21, 2019
+
+
+  0  Collapse this comment
+Copy link
+Windows should still be tickling the watchdog to stop the watchdog timer resetting the system until it’s (at least) synced all data to disk and unmounted filesystems so that they’ll be clean on next boot.
+
+
+
+
+
+toasterking  May 21, 2019
+
+
+  0  Collapse this comment
+Copy link
+I guess it depends on how the watchdog timer is implemented.  I worked with a server whose timer was tickled by a service, and services should be stopped prior to the final cache flush.  I admittedly don’t know if this resembles a typical implementation.
+
+
+
+George Gonzalez  May 17, 2019
+
+
+  0  Collapse this comment
+Copy link
+Long ago, but after all the unreliable hard disks in the IBM At’s, we were all getting a bit complacent about checking for errors after every printf(), and I wondered how important it was to check for file write errors.  Somewhere in MSDN I found a page that actually enumerated all the possible ways a write API could fail.  Memory is fuzzy but I think they listed about NINETEEN different and unusual ways to fail.   So I resolved to start the new year with checking after every IO operation.

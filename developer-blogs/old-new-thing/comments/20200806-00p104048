@@ -1,0 +1,102 @@
+Alois Kraus  August 11, 2020
+
+
+  0  Collapse this comment
+Copy link
+While you seem to know much about FormatMessage. Can it be made more efficient with regards to its locale? Every call to FormatMessage looks up the current culture in the Registry. This becomes a major bottleneck once you try to open up the Windows Event Viewer which seems to have gotten no love since a long time.
+See https://aloiskraus.wordpress.com/2020/07/20/ms-performance-hud-analyze-eventlog-reading-performance-in-realtime/ for the full background why it should definitely made faster since more and more security software seems to spelunk around in huge Security Event Logs.
+
+
+
+
+
+word merchant  August 9, 2020
+
+
+  0  Collapse this comment
+Copy link
+This looks like a horrible api. How was this allowed to ship?
+
+
+
+
+
+Joshua Hudson  August 7, 2020
+
+
+  0  Collapse this comment
+Copy link
+I remember calling GlobalAlloc a few years ago for something because nobody had gotten around to documenting that HeapAlloc survives the dll it was allocated from being freed. (under some circumstances malloc doesn’t).
+Also, .net provides AllocHGlobal and FreeHGlobal as it’s only fixed byte buffer allocators. (Ever try to keep a pin alive through a callback? It’s hard.) I have seriously considered writing an API that allocates with GlobalAlloc just so a .net caller can free it easier.
+
+
+
+
+
+Raymond Chen Author
+August 7, 2020
+
+
+  0  Collapse this comment
+Copy link
+The lifetime of HeapAlloc-allocated memory is tied to the heap, not the DLL. DLLs don't own heaps. It's not like HeapAlloc walks the stack looking for the return address. (Never occurred to me that this would need to be documented. Who expects the system to auto-destroy heaps on DLL unload? Especially if you allocated from the process heap - that thing is called the "process" heap for a reason.)
+The malloc behavior is the same: The lifetime of malloc memory depends on the lifetime of the heap it was allocated from, not the lifetime of the DLL that called malloc. (Now,...Read moreThe lifetime of HeapAlloc-allocated memory is tied to the heap, not the DLL. DLLs don’t own heaps. It’s not like HeapAlloc walks the stack looking for the return address. (Never occurred to me that this would need to be documented. Who expects the system to auto-destroy heaps on DLL unload? Especially if you allocated from the process heap – that thing is called the “process” heap for a reason.)
+The malloc behavior is the same: The lifetime of malloc memory depends on the lifetime of the heap it was allocated from, not the lifetime of the DLL that called malloc. (Now, there might be some other rule that says that the DLL destroys the heap on unload, but that’s a policy issue of the DLL, not a feature of the heap.)
+Read less
+
+
+
+
+
+
+
+Akash Bagh  August 7, 2020
+
+
+  0  Collapse this comment
+Copy link
+With malloc, the problem could be that the DLL uses a different runtime library. So you may have no way to free this memory after the DLL is unloaded.
+
+
+
+Gunnar Dalsnes  August 6, 2020
+
+
+  0  Collapse this comment
+Copy link
+Other options:
+a) adding FORMAT_MESSAGE_ALLOCATE_BUFFER_EX and documenting to use HeapFree.
+b) adding FORMAT_MESSAGE_ALLOCATE_BUFFER_EX and documenting to use FormatMessageFree.
+
+
+
+
+
+Flux  August 6, 2020
+
+
+  0  Collapse this comment
+Copy link
+The decision that won the day was to accept that legacy code will never die.
+And I’m sure it was the wrong decision. 😉
+Fortunately, the confusing paragraph isn’t there any more.
+Believe me, there are more confusing paragraphs there. For example, this:
+If the length of the formatted message exceeds 128K bytes, then FormatMessage will fail and a subsequent call to GetLastError will return ERROR_MORE_DATA.
+128K bytes? Is that 128 kilobytes (128 kB) or 128,000 bytes?  (For reference, 128 kB is 131,072 bytes.)
+
+
+
+
+
+aidtopia  August 7, 2020
+
+
+  0  Collapse this comment
+Copy link
+SI prefixes are case sensitive.  The SI prefix for 1000 is lowercase `k`.  Capital `K` is not an SI prefix.
+For more than half a century, capital `K`, in a computing context, has meant 1024.  So 128 KB is 131,072 bytes and 128 kB is 128,000 bytes.  Many user interfaces, bits of documentation, and marketing materials aren't careful about maintaining this distinction, but, in this case, the documentation is fine.
+Admittedly, when you get to higher orders, like megabytes, the scales are ambiguous. For RAM, 1 MB is almost always 1,048,576 (1024^2) bytes, but 1 MB of disk...Read moreSI prefixes are case sensitive.  The SI prefix for 1000 is lowercase `k`.  Capital `K` is not an SI prefix.
+For more than half a century, capital `K`, in a computing context, has meant 1024.  So 128 KB is 131,072 bytes and 128 kB is 128,000 bytes.  Many user interfaces, bits of documentation, and marketing materials aren’t careful about maintaining this distinction, but, in this case, the documentation is fine.
+Admittedly, when you get to higher orders, like megabytes, the scales are ambiguous. For RAM, 1 MB is almost always 1,048,576 (1024^2) bytes, but 1 MB of disk space is either 1000 kB (a million bytes) or 1000 KB, depending on the manufacturer.  The effort to reduce these kinds of ambiguity by introducing prefixes like kibi- and mibi- hasn’t gained widespread adoption.
+Similarly, case matters for `B` (bytes) and `b` (bits), too.  As with `K`, lots of sources are not careful about maintaining the distinction.  When your internet provider promises 100 MB/S, they almost certainly mean 100 Mbps, which is about an order of magnitude less.
+Read less

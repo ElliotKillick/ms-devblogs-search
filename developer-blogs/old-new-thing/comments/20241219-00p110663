@@ -1,0 +1,79 @@
+Anton Siluanov  December 20, 2024
+
+
+  0  Collapse this comment
+Copy link
+While priority inversion is a thing, from atomic I’d expect as quick as possible operation.
+And mutex impl can be done manually.
+
+
+
+
+
+紅樓鍮  December 19, 2024
+
+
+  0  Collapse this comment
+Copy link
+The notify_all line in MSVC STL has a comment that says
+// As we don't count waiters, every waiter is notified, and then some may re-request notification
+Why can’t notify_one be used if we don’t count waiters?
+
+
+
+
+
+Raymond Chen Author
+December 19, 2024
+
+
+  0  Collapse this comment
+Copy link
+I don’t know. Maybe you can read the original PR for clues.
+
+
+
+
+BCS  December 19, 2024
+
+
+  0  Collapse this comment
+Copy link
+Re where to steal bits from; even if the managed type has the correct alignment, stealing those bits would depend on being handled a correct pointer. That would prevent the user from stealing bits themselves or using pointer types to store “handles” that don’t actually point to anything (I don’t know if that’s valid, but 100% someone does it and would complain if you broke them).
+
+
+
+
+
+Me Gusta  December 22, 2024
+
+
+  0  Collapse this comment
+Copy link
+std::shared_pointer itself doesn’t seem to make any guarantees on alignment. As long as the user passes in a custom deleter, then this would be perfectly valid.
+I would guess that the main reason alignment was pointed out here is that pointers to char (character type, signed and unsigned), short (signed and unsigned) and wchar_t are a lot more common than bit stealing.
+
+
+
+
+
+紅樓鍮  December 24, 2024
+
+
+  0  Collapse this comment
+Copy link
+Re Kevin:
+the behavior is implementation-defined
+Well, at least I’d expect my implementation to be tolerant of unaligned “handles” handed out by the operating system, or else I’d think that’s a bug of the implementation, not my program (I’m already committed to IB when I called operating system APIs).
+
+
+
+
+
+Kevin Norris  December 22, 2024
+
+
+  0  Collapse this comment
+Copy link
+It's not 100% valid, because in C++, any pointer-typed expression must evaluate to either a null pointer or a valid pointer (including a pointer one past the end of an array), or else the behavior is implementation-defined (unless you dereference the pointer, in which case it is UB instead), and your implementation might decide that it traps or does some other obnoxious thing (which they are, at least, required to document, unlike UB where it's the wild west and anything can happen). Since shared_ptr must be handed a pointer-typed value (and not an opaque array of char or the like),...Read moreIt’s not 100% valid, because in C++, any pointer-typed expression must evaluate to either a null pointer or a valid pointer (including a pointer one past the end of an array), or else the behavior is implementation-defined (unless you dereference the pointer, in which case it is UB instead), and your implementation might decide that it traps or does some other obnoxious thing (which they are, at least, required to document, unlike UB where it’s the wild west and anything can happen). Since shared_ptr must be handed a pointer-typed value (and not an opaque array of char or the like), it is not possible to pass arbitrary invalid pointers to shared_ptr without invoking IB when the pointer is evaluated.
+Read less

@@ -1,0 +1,128 @@
+Henri Vettenranta  December 31, 2020
+
+
+  0  Collapse this comment
+Copy link
+I think it would be best if unknown-type, now that it exists, worked something like this:
+1. It can be used with any operator, the resulting type being unknown-type (except in type conversion expressions and when using unknown-type as the first operand of the conditional operator, in which case the resulting type should be as usual). This includes using the value of unknown-type as a function in a function call expression.
+2. It can be used with any known free function (template). The function call subexpression results in unknown-type.
+3. It is implicitly convertible to any other type. (When used as...Read moreI think it would be best if unknown-type, now that it exists, worked something like this:
+1. It can be used with any operator, the resulting type being unknown-type (except in type conversion expressions and when using unknown-type as the first operand of the conditional operator, in which case the resulting type should be as usual). This includes using the value of unknown-type as a function in a function call expression.
+2. It can be used with any known free function (template). The function call subexpression results in unknown-type.
+3. It is implicitly convertible to any other type. (When used as an argument of a free function, the above rule should take precedence; however, this rule is to be used when using unknown-type as an argument for a member function of some other type or for some language construct that expects a particular type, e.g. the condition of an if or while statement, or variable initialization.) This includes implicit conversion between rvalues and lvalues of unknown-type.
+4. If rule 3 produces an ambiguity in overload resolution, the member function call operator returns unknown-type, similarly to free function calls.
+5. unknown-type itself has any member the code asks for. Functions and function templates return unknown-type, and the type of other members is unknown-type.
+The goal is to complain about the original error (the one which originally produces unknown-type), and any unrelated errors found in the code, but stay silent about code that could be correct once the original error is fixed. Of course it’s possible that this way the compiler will also stay silent about code that actually contains further errors, and so there will be new error messages once the original error has been fixed, but I think it’s better to err on the side of not overwhelming the programmer (or, in the case of C++, overwhelming the programmer as little as possible).
+I have implemented something like this in a compiler I wrote for a university course, although for a language much simpler than C++.
+Read less
+
+
+
+
+
+
+
+Gunnar Dalsnes  December 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+But why can’t the compiler fake a declaration with the correct type? Using int or unknown-type is just…weird.
+
+
+
+
+
+Me Gusta  December 31, 2020
+
+
+  0  Collapse this comment
+Copy link
+As some situations to consider.
+1) The compiler can do integral promotion (signed char -> short/int/long/long long as an example). This means that a function can return a smaller type and assign it to a larger type without loss and the compiler won’t care.
+2) If you know what you are doing, you can do the same as above carefully while mixing signed/unsigned types.
+3) You return an object type with a conversion operator. I.e. you return a type of my_object with an operator int.
+What’s more, this is assuming that the code is correct.
+
+
+
+
+
+Jeff Howe  December 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+What would be the point? The "correct" type may not be known. There's no guarantee that the function actually does exist; note that it's not in the code that Raymond cited, so it could be a function that lives in a separate compilation unit but happens to match the guess, or one that has a different signature or return value, in a different compilation unit or later on in the same compilation unit. The first one might work, so yay, but it's still not correct code. The latter cases either still report an error, or just push the error down...Read moreWhat would be the point? The “correct” type may not be known. There’s no guarantee that the function actually does exist; note that it’s not in the code that Raymond cited, so it could be a function that lives in a separate compilation unit but happens to match the guess, or one that has a different signature or return value, in a different compilation unit or later on in the same compilation unit. The first one might work, so yay, but it’s still not correct code. The latter cases either still report an error, or just push the error down the road to the linker, so you get an error message that may not even be particularly helpful. The compiler’s job (specifically, the parser part of the compiler) is to validate your code against the language grammar, and not to try to guess what your code means.
+Using int is a legacy of the old C world, as Raymond mentions: declarations are default int, or at least were, and pointer types could be int-sized, so depending on the architecture, that would often work, too. Conversely, unknown-type is exactly descriptive of the situation: you’re using the return value of a function whose return value type has not been specified. Neither of these is weird in any way; certainly no weirder than trying to guess what the code means.
+Read less
+
+
+
+
+
+
+
+chrisok  December 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+But what is the correct type? How should the compiler know? Just because the code in question does attempt to assign to a variable of a certain type does not necessarily mean that this is the correct one (and what about „auto“?). After all, the declaration is missing for the compiler to look at in the first place. So the assumption that the type of the variable in the code is the correct one, might lead to other cascading errors that are also confusing.
+
+
+
+
+skSdnW  December 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+cl 14.00.50727.762 (2005 SP1) still uses int
+
+
+
+
+
+Neil Rashbrook  December 31, 2020
+
+
+  0  Collapse this comment
+Copy link
+As I happen to have cl 16.0.x, 17.0.x, 18.0.x, 19.0.x and 19.15.x, I thought I’d try this, but I only get the C2065, not the C2440, as per this example: https://godbolt.org/z/ncr5jq
+
+
+
+
+Μολὼν λαβέ  December 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+“Now to the next error”
+I’ve found a lot of times, precisely because of what Raymond describes next, if you had to change code to fix an error, it’s best to stop looking at any further errors and recompile.  Otherwise you may waste time trying to fix cascade errors that aren’t real any more.
+
+
+
+
+
+Μολὼν λαβέ  December 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+” Instead of assuming that they are int, it treats them as a hypothetical type called unknown-type.”
+I guess in this particular type of situation, it might be possible for the compiler to look at the function declaration it synthesized, look at the place where the function is called, and change the synthesized declaration to match the actual call site.  I don’t know if that could wind up just causing a different problem, though.
+
+
+
+
+
+Paul Herring  December 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+ I don’t know if that could wind up just causing a different problem, though.
+Well, doing that would not fix the real problem – by the time the compiler’s emitting an error, the code’s syntactically wrong, and the compiler trying to figure out what the programmer was trying to write, instead of getting the programmer to fix what they’ve ambiguously written is going to come back and bite someone.
+SFINAE may be a thing in C++, but it’s not something that -arguably – should be happening in the exemplar here.

@@ -1,0 +1,107 @@
+Александр Гутенев  April 22, 2024
+
+
+  0  Collapse this comment
+Copy link
+For such things I’d use `once_flag` as a member instead of `shared_mutex` if feasible.
+Or even magic static, if it is fine to be global instead of a member.
+It is both better performance on fast path, and limited operation to this specific scenario, so fewer possibilities to make a mistake.
+
+
+
+
+
+Kevin Gosse  April 15, 2024
+
+
+  1  Collapse this comment
+Copy link
+I read this article today, and literally 5 hours later we detected a crash in our CI due to this exact problem.
+std::string ManagedThreadInfo::GetProfileThreadName()
+{
+    if (_profileThreadName.empty())
+    {
+        BuildProfileThreadName();
+    }
+
+    return _profileThreadName;
+}
+Your psychic powers are uncanny.
+
+
+
+
+
+Neil Rashbrook  April 13, 2024
+
+
+  0  Collapse this comment
+Copy link
+I noticed you only used the if-initialiser once. Was there a reason to keep the exclusive lock until the end of the function?
+(I wasn’t aware of if-initialisers, which shows how long ago I last used C++.)
+
+
+
+
+
+Zhivko Tabakov  April 14, 2024
+
+
+  0  Collapse this comment
+Copy link
+I think “if-initializer” object scope ends with the if, so the first lock is released before SlowGetId(), the mutex is not locked during the slow operation. The lock is acquired again lock after it. This is generally good idea when calling slow operations, but is it in this case?
+INHO if there are sever concurrent threads entering this method, there could be multiple SlowGetId() calls running in parallel, just to discard all but one of the generated ids. I would lock the whole method, forcing the other threads to wait instead (depending on what SlowGetId() is doing).
+
+
+
+
+
+Raymond Chen Author
+April 15, 2024
+
+
+  0  Collapse this comment
+Copy link
+I dropped the lock to avoid deadlocks if SlowGetId does RPC or otherwise yields reentrantly.
+
+
+
+紅樓鍮  April 12, 2024
+
+
+  0  Collapse this comment
+Copy link
+This. I think this is why learning Rust makes you a better C++ (or C) programmer: the vast majority of things that Rust considers unsafe are things that are undefined behavior in C and C++ in the first place, and by learning Rust you end up learning about footguns in C/C++ that you didn't have a clear idea before and how to effectively counter them. In this case, familiarity with Rust will make it second nature that "interior mutability must be protected with mutex, or else the object is not thread safe", and as a result the programmer is less...Read moreThis. I think this is why learning Rust makes you a better C++ (or C) programmer: the vast majority of things that Rust considers unsafe are things that are undefined behavior in C and C++ in the first place, and by learning Rust you end up learning about footguns in C/C++ that you didn’t have a clear idea before and how to effectively counter them. In this case, familiarity with Rust will make it second nature that “interior mutability must be protected with mutex, or else the object is not thread safe”, and as a result the programmer is less likely to write the thread-unsafe version of the code in the first place.
+Read less
+
+
+
+
+
+
+
+Klíma Daniel  April 12, 2024
+
+
+  0  Collapse this comment
+Copy link
+In case of MT no need to learn Rust. Here we’re dealing with basic rules of concurrency. You can get similar fun in any language.
+
+
+
+
+
+Chris Iverson  April 12, 2024
+
+
+  0  Collapse this comment
+Copy link
+Eh, I think I get what they're saying.
+No, there's no need to learn Rust to do MT programming. There's also no need to learn Rust to learn how to do MT programming properly.
+However, learning and using Rust to learn to do MT programming helps by smacking you in the face when you set something up that could lead to something like this. It's like training wheels. It makes it easier for you to understand where the issues are while you're learning how to do it.
+C++ will just let you do it, and blow your foot off, and leave you trying...Read moreEh, I think I get what they’re saying.
+No, there’s no need to learn Rust to do MT programming. There’s also no need to learn Rust to learn how to do MT programming properly.
+However, learning and using Rust to learn to do MT programming helps by smacking you in the face when you set something up that could lead to something like this. It’s like training wheels. It makes it easier for you to understand where the issues are while you’re learning how to do it.
+C++ will just let you do it, and blow your foot off, and leave you trying to figure out why.
+Yes, if you’re skilled in MT programming, the issue that happens here winds up being obvious. If you’re not skilled in MT programming, and you’re still learning, you’re just left floundering.
+Read less

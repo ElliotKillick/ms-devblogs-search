@@ -1,0 +1,59 @@
+紅樓鍮  June 23, 2021
+· Edited
+
+  0  Collapse this comment
+Copy link
+NB to anyone who is horrendously confused by the variadics epilogue as I was:
+The caller will clean up the stack params, i. e. those past the first 16 bytes of the param struct.  We additionally push the first 16 bytes onto the stack for convenience, but they're not stack params, and we have to clean them up.
+A typical prologue is
+<code>
+or
+<code>
+the first line of either of which is what Raymond means by "it will probably start with a ".  Do not confuse it with the dummy push, which is the second line of the latter example above.
+Here's an example....Read moreNB to anyone who is horrendously confused by the variadics epilogue as I was:
+The caller will clean up the stack params, i. e. those past the first 16 bytes of the param struct.  We additionally push the first 16 bytes onto the stack for convenience, but they’re not stack params, and we have to clean them up.
+A typical prologue is
+push    {r0-r3}
+push    {r4-r7,r11,lr}
+sub     sp, sp, #0x44       ; e. g. if we use up to 68 bytes for locals
+or
+push    {r0-r3}
+push    {r0-r7,r11,lr}      ; we use 16 bytes for locals,
+                            ; which the additional dummy push of r0-r3 will do
+the first line of either of which is what Raymond means by “it will probably start with a push {r0-r3}“.  Do not confuse it with the dummy push, which is the second line of the latter example above.
+Here’s an example.  Suppose we use 68 bytes for locals, and our signature is
+int us(unsigned int number_of_arguments_following, ...);
+and a caller calls us with, for example,
+// in caller code:
+us(8u, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef);
+then after our prologue, the stack looks like
+                  sp+0x80 (caller frame above, do not touch...)
+               /- sp+0x7c 0xef ----------------------------------\
+              |   sp+0x78 0xcd                                    |
+              |   sp+0x74 0xab                                     > caller pushed, caller to clean up
+              |   sp+0x70 0x89                                    |
+param struct <    sp+0x6c 0x67 ----------------------------------/
+              |   sp+0x68 0x45 ----------\ ----------------------\
+              |   sp+0x64 0x23             > push {r0-r3}         |
+              |   sp+0x60 0x01            |                       |
+               \- sp+0x5c 8u ------------/                        |
+                  sp+0x58 <saved lr> ----\                        |
+                  sp+0x54 <caller's r11>  |                       |
+                  sp+0x50 <caller's r7>    > push {r4-r7,r11,lr}   > we pushed, we clean up
+                  sp+0x4c <caller's r6>   |                       |
+                  sp+0x48 <caller's r5>   |                       |
+                  sp+0x44 <caller's r4> -/                        |
+                  sp+0x40 uninitialized -\                        |
+                  ...                      > sub sp, sp, 0x44     |
+                  sp+0    uninitialized -/ ----------------------/
+Then our epilogue will be
+add     sp, sp, #0x44       ; cancel "sub sp, sp, #0x44",
+                            ; sp now at <caller's r4>
+pop     {r4-r7,r11}         ; partially cancel "push {r4-r7,r11,lr}", leaving <saved lr> on stack,
+                            ; sp now at <saved lr>
+ldr     pc, [sp], #0x14     ; load pc = [sp], i. e. pc = <saved lr>,
+                            ; then both kill the left-over <saved lr> (0x4 bytes)
+                            ; and cancel "push {r0-r3}" (0x10 bytes),
+                            ; cleanup on our part is complete
+Do not confuse ldr pc, [sp], #0x14 with ldr pc, [sp, #0x14] or ldr pc, [sp, #0x14]!!
+Read less

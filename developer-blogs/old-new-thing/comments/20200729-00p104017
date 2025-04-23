@@ -1,0 +1,230 @@
+Adam  July 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+The simplest way to make the compiler complain about code like that is to make the return value of o.Name() const.
+https://gcc.godbolt.org/z/x1WsPr
+
+
+
+
+
+Raymond Chen Author
+July 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+But that also removes the ability to perform non-const operations on the result, like SomeOtherFunction(detach_abi(o.Name())).
+
+
+
+
+Neil Rashbrook  July 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+I guess the other approach would be for o.Property() to return an intermediate object, such that if you tried to use it then you would get the property for real, but if you tried to assign to it then it would set the property, in much the same way that array-like objects allow you to write o[1] = o[0];.
+
+
+
+
+
+Raymond Chen Author
+July 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+But then auto result = o.Property(); o.destroy(); if (result == L"Hello") { ... } would now use o after it has been destroyed.
+
+
+
+
+Gunnar Dalsnes  July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+Any reason for not using the more common (?) o.GetProperty() / o.SetProperty(…) naming?
+
+
+
+
+
+Akash Bagh  July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+This comment has been deleted.
+
+
+
+
+
+Kalle Niemitalo  July 30, 2020
+
+
+  0  Collapse this comment
+Copy link
+Windows Metadata (WinMD) files notes that property accessor methods have  “get_” and “put_” prefixes in their names. I imagine C++/WinRT could have surfaced those names unchanged and there wouldn’t then have been any clashes.
+
+
+
+
+
+Gunnar Dalsnes  August 2, 2020
+
+
+  0  Collapse this comment
+Copy link
+Again, really weird that put was choosen above set, but maybe its just me:-)
+
+
+
+
+
+Ben Voigt  August 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+Thank classic VB which had two assignment statements, Set and Let.  That pattern leaked into COM and from there into every subsequent Windows object metamodel.  “Put” thus makes it clear that this is not VB Let or VB Set (actually any given usage of put probably overlaps one of the other two, but no promises made as to which one).
+
+
+
+Ivan K  July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+》 Congratulations, you updated a temporary that was immediately destructed. Total waste of time.
+Stop whinging. :-p
+
+
+
+
+
+Joshua Hudson  July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+Are you sure you don’t want to see properties in current C++? I did them back in college and I’m sure it still works. Just don’t use them on temporary copies of objects. I always made vectors of classes as vectors of pointers to classes so my property implementation didn’t have to care.
+
+
+
+
+
+Simon Clarkstone  July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+Do linters pick this mistake up? If the assignment has no effect then that needs a warning, and if the assignment does have an effect then that is a bizarre design that deserves a warning too.
+
+
+
+
+
+Raymond Chen Author
+July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+The assignment has an effect (it bumps the string reference count, and then drops it when the temporary destructs), and since the effect is externally observable, the compiler assumes it was intentional.
+
+
+
+
+
+Simon Clarkstone  July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+Ah, thanks. I didn’t think of reference-counting as I haven’t touched C++ for about 20 years and used it very little before that. I agree the compiler is doing the right thing there, but from a human point of view are there any cases where assigning to a temporary like this is both a useful and clear way of accomplishing something?
+
+
+
+
+
+Raymond Chen Author
+July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+Even if it were std::string, the compiler doesn’t optimize it out. In the special case of std::string, the compiler would be permitted to do so because std::string is defined by the standard library. But if it were folly::fbstring, the compiler is probably going to perform the copy.
+
+
+
+Henke37  July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+I blame the C++ standard here.
+
+
+
+
+
+Akash Bagh  July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+Don’t worry, the C++ standard has a solution to this problem:
+If the class declares its assignment operator with a ref-qualifier:
+  `Class& operator=(const Class&) &;`
+the compiler will report an error when trying to assign to a temporary.
+This nicely illustrates the fundamental character of C++: sane behavior is possible if you’re careful; but insanity is the default.
+
+
+
+
+
+Henke37  July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+I was more blaming C++ for not having smart properties.
+
+
+
+
+
+Ben Voigt  August 3, 2020
+
+
+  0  Collapse this comment
+Copy link
+The C++ language has all the tools for building smart property members as a library (using proxy objects).  I did it way back with C++98.  It wasn’t worth the trouble, because C++ code using “smart property” members breaks every paradigm and programmer expectation.
+Notably, the C++ way using proxy objects results in properties that can be passed by reference (although they aren’t type-compatible with references to plain data of the same type) which is something that all the newer languages struggle with.
+
+
+
+
+
+Raymond Chen Author
+July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+The C++ standard giveth, and the C++ standard taketh away. If a base class has a Base& operator=(const Base&)& method (denying the rvalue assignment), the derived class's default copy assignment operator does not have the lvalue qualifier, so it can be used on rvalues again!
+
+
+
+Alex Martin  July 29, 2020
+
+
+  0  Collapse this comment
+Copy link
+At least it doesn’t mysteriously corrupt something important?

@@ -1,0 +1,126 @@
+Bogdan adder_2003@yahoo.com  January 30, 2025
+· Edited
+
+  0  Collapse this comment
+Copy link
+Respectfully, IMO, that (copy-construction vs default-construction-plus-copy-assignment) is not the major problem with the code.
+The problem is calling potentially unknown code while holding a lock.
+And even if the details of all internal operations for Widget are known today, do we want to introduce a dependency on how they are ?
+Please see Mr. Herb Sutter's 2007 Article "Avoid Calling Unknown Code While Inside a Critical Section":
+https://herbsutter.com/2007/11/06/effective-concurrency-avoid-calling-unknown-code-while-inside-a-critical-section/
+My modest suggestion (if I may make one) is to handle such Widgets-which-need-copying-while-in-a-critical-region (which often appear in "thread-safe" implementations of the Command design pattern and the Subject-Observer design pattern) via the likes of shared_ptr, i.e....Read moreRespectfully, IMO, that (copy-construction vs default-construction-plus-copy-assignment) is not the major problem with the code.
+The problem is calling potentially unknown code while holding a lock.
+And even if the details of all internal operations for Widget are known today, do we want to introduce a dependency on how they are ?
+Please see Mr. Herb Sutter’s 2007 Article “Avoid Calling Unknown Code While Inside a Critical Section”:
+https://herbsutter.com/2007/11/06/effective-concurrency-avoid-calling-unknown-code-while-inside-a-critical-section/
+My modest suggestion (if I may make one) is to handle such Widgets-which-need-copying-while-in-a-critical-region (which often appear in “thread-safe” implementations of the Command design pattern and the Subject-Observer design pattern) via the likes of shared_ptr, i.e. by reference counting.
+Then the copy operations are going to be replaced by arithmetic operations on the reference count.
+I (currently) do not hold the ultimate truth, and I (always) have a lot of respect for Mr. Raymond Chen’s opinions and for the opinions of his readers, therefore I will happily stand corrected.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+January 31, 2025
+
+
+  0  Collapse this comment
+Copy link
+The assumption here is that the operation under the lock is not unknown code. You are operating on private members of your own class.
+
+
+
+
+Dmitry  January 28, 2025
+
+
+  0  Collapse this comment
+Copy link
+It’s fascinating how C++ folks overcomplicate their language and standard library semantics to later look for better but, maybe, not so obvious ways to do otherwise very simple stuff. Helps me to stop complaining about the difficulties of the profession while working outside this ecosystem.
+
+
+
+
+
+Paul Jackson  January 28, 2025
+
+
+  0  Collapse this comment
+Copy link
+“This does suffer from the problem of running the Widget constructor for an object that we’re going to overwrite anyway.” – could use an optional. Probably inferior in this case, but can be useful in other cases
+
+
+
+
+
+Joshua Hudson  January 27, 2025
+
+
+  0  Collapse this comment
+Copy link
+Alternate pattern:
+auto lock = lock_from(mutex);
+lock.take();
+Widget widget = m_widget;
+lock.release();
+//…
+lock.take();
+// Can even do a write back under other lock; if the code pattern makes this sane. (In some cases it will, in some not.)
+lock.release();
+I’m accustomed to a slightly stronger guard for a lock that has take and release methods, and is smart enough to release the lock on destruction if it currently owns it.
+
+
+
+
+
+Martin Ba  January 30, 2025
+
+
+  0  Collapse this comment
+Copy link
+And the standard has a tool for that: std::unique_lock
+(see also: https://stackoverflow.com/questions/43019598/stdlock-guard-or-stdscoped-lock )
+
+
+
+
+BCS  January 27, 2025
+
+
+  0  Collapse this comment
+Copy link
+I really want to say you can avoid the lambda and just use a comma expression… But I’m going to guess that the lambda will result in less head scratching.
+
+
+
+
+
+Kevin Norris  January 27, 2025
+
+
+  1  Collapse this comment
+Copy link
+You presumably mean writing something like this:
+The "obvious" question that I would have upon encountering this code, after figuring out that you meant to write the comma operator and did not misplace the closing parenthesis, would be whether the temporary lock guard is destroyed after the evaluation of the RHS, or after the Widget copy constructor returns. Reading through cppreference, I think it is the latter, so the code appears to be fine as far as I can tell, but temporaries are confusing enough without giving them side effects, so I would be very unhappy if I saw this...Read moreYou presumably mean writing something like this: Widget widget = std::lock_guard(m_mutex), m_widget;
+The “obvious” question that I would have upon encountering this code, after figuring out that you meant to write the comma operator and did not misplace the closing parenthesis, would be whether the temporary lock guard is destroyed after the evaluation of the RHS, or after the Widget copy constructor returns. Reading through cppreference, I think it is the latter, so the code appears to be fine as far as I can tell, but temporaries are confusing enough without giving them side effects, so I would be very unhappy if I saw this code in a real project.
+Rust lets you write let widget = { let guard = m_mutex.lock().unwrap(); m_widget } (the block is an expression, and evaluates to a result, just like any other expression). I don’t think that can reasonably be added to C++ given the language’s strong distinction between statements and expressions. Of course, in idiomatic Rust, we would usually write something like let widget = m_mutex.lock().unwrap().clone() instead, since the widget would normally be wrapped by the lock to enforce correctness.
+Read less
+
+
+
+
+
+
+
+Bwmat  January 29, 2025
+· Edited
+
+  0  Collapse this comment
+Copy link
+I’ve done stuff like
+m_referenceMember(CriticalSectionLock(lock), assert(IsValid(referenceProtectedByLock)), referenceProtectedByLock)
+in initializer lists before just to avoid having to create some helper functions for debug assertions. Thoughts?

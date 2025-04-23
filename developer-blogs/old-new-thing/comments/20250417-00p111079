@@ -1,0 +1,41 @@
+GL
+
+5 days ago· Edited
+
+  1  Collapse this comment
+Copy link
+From the stack trace, the crash happens during the destruction of  instance of , which destructs a  of s, one of which is  (I assume all of them are), whose destruction enters . My theory: a  tries to remove itself from the singleton  upon closing, so it has to  it (maybe it remembered whether it added itself to the router upon construction, dependent on the feature flag at that time, and didn't think the feature could be disabled during its lifetime). This of course happens after  has returned, because singletons are destructed on...Read moreFrom the stack trace, the crash happens during the destruction of singleton instance of WidgetRouter, which destructs a vector of ICloseables, one of which is Widget (I assume all of them are), whose destruction enters GetInstance. My theory: a Widget tries to remove itself from the singleton WidgetRouter upon closing, so it has to GetInstance it (maybe it remembered whether it added itself to the router upon construction, dependent on the feature flag at that time, and didn’t think the feature could be disabled during its lifetime). This of course happens after BasicTests has returned, because singletons are destructed on DLL unload. At this point, the feature is disabled (since override in BasicTests is dead) so it’s failing the assertion.
+The theory is quite scary — the vector destructor is releasing Widget then Widget destructor tries to edit that vector under destruction. I hope this is not the case. (But FWIW, the act of editing the vector appears to work since the code does not crash if the feature is always enabled.) Also, since WidgetRouter references the widgets, the widgets never naturally close. This is already a huge red flag, but suppose the widget users will close them manually, then the design is somewhat similar to a typical flaw in .NET finalizers and dispose methods. When Close is called from ~Widget, it means the last outstanding reference is being released, either by the user (if the feature has always been disabled), or by the WidgetRouter destructor. In either case, it’s incorrect to try removing itself from WidgetRouter (former: it’s not there; latter: it’s not there, because the destructor virtually removes everything from the vector). One possible solution is the Dispose(bool disposing) pattern — clean-up should know whether it’s called from ICloseable::Close or the destructor.
+Read less
+ Log in to Vote or Reply
+
+
+
+
+
+
+Kevin Norris  April 18, 2025
+
+
+  0  Collapse this comment
+Copy link
+The whole thing stinks of overengineering to me.
+Think about it. That vector is statically-allocated mutable state. Why would you reach for such a thing? There are a bunch of bad answers I can think of, but when we further add the constraint that ~Widget exists and does anything custom at all, the rule of zero tends to constrain the solution space down to (roughly) the following: Widget is responsible for managing some process-wide state or resource, that state or resource is inherently per-process (or global to the system) and cannot be sensibly managed without some variety of global mutable state,...Read moreThe whole thing stinks of overengineering to me.
+Think about it. That vector is statically-allocated mutable state. Why would you reach for such a thing? There are a bunch of bad answers I can think of, but when we further add the constraint that ~Widget exists and does anything custom at all, the rule of zero tends to constrain the solution space down to (roughly) the following: Widget is responsible for managing some process-wide state or resource, that state or resource is inherently per-process (or global to the system) and cannot be sensibly managed without some variety of global mutable state, and this design is presumably dictated by some OS-level restriction that we can’t work around or ignore.
+But that’s still a bad excuse, because even in that hypothetical, it is obvious that you cannot simultaneously have WidgetRouter be responsible for cleaning up Widget and vice-versa. One of them has to be the owner, and your smart pointers have to agree with that ownership model.
+Read less
+ Log in to Vote or Reply
+
+
+
+
+
+
+GL
+
+4 days ago
+
+  0  Collapse this comment
+Copy link
+Rereading the stack trace makes me even more curious. Why is vector::clear calling ~vector? Are they operating on the same vector (I read the code of MSVC STL but its clear doesn’t try to destroy itself)?
+Another suspicious point is WidgetRouter is not bound to COM lifetime but manages COM objects. (But maybe their scenario doesn’t involve uninitializing COM process-wide, so…)

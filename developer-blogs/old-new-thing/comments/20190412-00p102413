@@ -1,0 +1,101 @@
+Dave Bacher  April 17, 2019
+
+
+  0  Collapse this comment
+Copy link
+I actually might use this – the UWP File Picker is a lot nicer for any case involving cloud providers, and is potentially more secure for some cases.
+
+
+
+
+
+Gunnar Dalsnes  April 16, 2019
+
+
+  0  Collapse this comment
+Copy link
+is the as method specific to the picker (or some base class) or is it a c++ thing (ala. extension method)?
+how is it diffetent from regular cast?
+
+
+
+
+
+Me Gusta  April 16, 2019
+
+
+  0  Collapse this comment
+Copy link
+As you may know, the UWP API is based upon COM. The pickers themselves are implemented as a bunch of interfaces. All COM interfaces, even UWP interfaces, inherit from IUnknown (UWP interfaces inherit from IInspectable which inherits from IUnknown).
+Now, the C++/WinRT library wraps this and names it after the logical class. But because this is a COM API then it wraps interfaces to the underlying object that implement this behaviour and these interfaces derive from IUnknown.
+The way COM has you change between interfaces in that object is by using IUnknown::QueryInterface, so since this is a COM API, the...Read moreAs you may know, the UWP API is based upon COM. The pickers themselves are implemented as a bunch of interfaces. All COM interfaces, even UWP interfaces, inherit from IUnknown (UWP interfaces inherit from IInspectable which inherits from IUnknown).
+Now, the C++/WinRT library wraps this and names it after the logical class. But because this is a COM API then it wraps interfaces to the underlying object that implement this behaviour and these interfaces derive from IUnknown.
+The way COM has you change between interfaces in that object is by using IUnknown::QueryInterface, so since this is a COM API, the way that you would get an IInitializeWithWindow out of one of the picker interfaces is by using QueryInterface. If you look in the C++/WinRT libraries implementation for the as function, you should find the template function at around 4067 of base.h in the 17763 SDK. This function calls QueryInterface on the interface pointer stored in the picker wrapper class.
+So this is a wrapper function around the underlying COM IUnknown::QueryInterface function. The C++/WinRT library wraps this in the as function. This is a type safe cast in that you request a specific type and it will only succeed if that type is part of the underlying object, and if it fails then the C++/WinRT library throws an exception.
+Read less
+
+
+
+
+
+
+John Selbie  April 14, 2019
+
+
+  0  Collapse this comment
+Copy link
+If you are trying this at home.  The needed headers include:
+    #include <shobjidl_core.h>
+    #include <winrt/windows.storage.pickers.h>
+And the library to link with:
+    runtimeobject.lib
+
+
+
+
+
+Raymond Chen Author
+April 15, 2019
+
+
+  0  Collapse this comment
+Copy link
+More convenient is to link with the umbrella library windowsapp.lib.
+
+
+
+
+Ji Luo  April 12, 2019
+
+
+  0  Collapse this comment
+Copy link
+I inferred that pattern a few weeks ago when I was playing with the Pin to Start dialog. I wonder whether that pattern could be used in production, since MSDN doesn’t mention this pattern, nor does the documentation for FilePickers say a word on it.
+For another thing, FilePickers are quite different from IFileDialog (contrary to the MSDN statement saying that desktop apps don’t need them as they already have IFileDialog and full access to the file system). They have the benefit of being able to consume UWPs that provide pickers. They are also process-isolated in PickerHost.exe. This provides the...Read moreI inferred that pattern a few weeks ago when I was playing with the Pin to Start dialog. I wonder whether that pattern could be used in production, since MSDN doesn’t mention this pattern, nor does the documentation for FilePickers say a word on it.
+For another thing, FilePickers are quite different from IFileDialog (contrary to the MSDN statement saying that desktop apps don’t need them as they already have IFileDialog and full access to the file system). They have the benefit of being able to consume UWPs that provide pickers. They are also process-isolated in PickerHost.exe. This provides the benefit of being immune to bad in-process shell handlers that come into play when you open a common dialog.
+Finally, there’s something funny about the pickers. If a UWP app uses the picker, the dialog will not be able to process IPreviewHandler correctly, yet works okay with IThumbnailProvider. If you use common dialogs or file pickers from a desktop app, you will see both preview handlers and thumbnail providers. I think that’s a bug, is it?
+Read less
+
+
+
+
+
+
+
+Joe Beans  April 12, 2019
+
+
+  0  Collapse this comment
+Copy link
+I host all my Win32 IFileDialogs out-of-process so you not only get a dedicated UI thread for speed but can do cool stuff like automatically reopen the window if it hard crashes. Fortunately you can specify an out-of-process HWND parent and it will obey it, unlike any dialogs that have to do with the miserable IShellItem Recycle Bin. That tiny section of code needs review BTW. The Recycle Bin’s implementation is such a hack, I hate it.
+
+
+
+
+Me Gusta  April 12, 2019
+
+
+  0  Collapse this comment
+Copy link
+This is interesting. This really helps for interoping with UWP.
+I knew you could get the StorageFolder from GetFolderFromPathAsync and work from that, but knowing how to get the pickers to work really helps

@@ -1,0 +1,136 @@
+James Curran  December 6, 2022
+
+
+  0  Collapse this comment
+Copy link
+Also, two unrelated questions that might yield good blog posts…
+  – Where did the name “contoso” come from?  MSFT has been using it for years, so it must mean something to someone.
+  – How did MSFT decide that the 2nd Tuesday of the month was the best time to release OS updates?
+
+
+
+
+
+Solomon Ucko  December 8, 2022
+
+
+  0  Collapse this comment
+Copy link
+About Contoso and the other placeholder names: https://devblogs.microsoft.com/oldnewthing/20061013-05/?p=29393
+
+
+
+
+
+James Curran  December 13, 2022
+
+
+  0  Collapse this comment
+Copy link
+But that merely tells us that it was approved by the Trademarks department.  Someone had to come up with it and submit it to them, and I suspect that person had a reason for using that name.
+
+
+
+James Curran  December 6, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+ah… But say you want to offer interop with Northwind’s Point as well….
+    constexpr Point(Northwind::Point const& cpt) : X(cpt.x_coord), Y(cpt.y_coord) {}
+
+
+
+
+
+Krzysztof Kawa  December 4, 2022
+· Edited
+
+  0  Collapse this comment
+Copy link
+Wouldn't this be a good candidate for a concept? Something along the lines of
+<code>
+Then you could make a pretty clean constructor like this
+<code>
+We don't really care if T is convertible to Contoso::Point, only that it has the needed members, so we don't mention Contoso by name and don't have to include it.
+In case of an error the message states that concept HasXY is not satisfied, which is pretty clear I think.
+Read moreWouldn’t this be a good candidate for a concept? Something along the lines of
+template<typename T>
+concept HasXY = std::is_convertible_v<decltype(T::X), int> && std::is_convertible_v<decltype(T::Y), int>;
+Then you could make a pretty clean constructor like this
+template<HasXY T>
+constexpr Point(T const& cpt) : X(cpt.X), Y(cpt.Y) {}
+We don’t really care if T is convertible to Contoso::Point, only that it has the needed members, so we don’t mention Contoso by name and don’t have to include it.
+In case of an error the message states that concept HasXY is not satisfied, which is pretty clear I think.
+Read less
+
+
+
+
+
+
+
+Raymond Chen Author
+December 4, 2022
+
+
+  0  Collapse this comment
+Copy link
+The concept is basically the template<typename T> Point(T const& cpt) : X(cpt.X), Y(cpt.Y) {} constructor, and it has the same problem: If T does not itself have X and Y members, but it is convertible to Contoso::Point, we want to convert it and then use the coordinates from the conversion. The goal is to have the class act as if it had a constructor that accepted a Contoso::Point: constexpr Point(Contoso::Point const& cpt) : X(cpt.X), Y(cpt.Y) {}.
+
+
+
+
+
+Krzysztof Kawa  December 5, 2022
+
+
+  0  Collapse this comment
+Copy link
+Ok, got it. I concentrated on the error readability too much.
+
+
+
+Adam Rosenfield  December 2, 2022
+
+
+  0  Collapse this comment
+Copy link
+With nested classes, forward declarations don’t work:
+struct OuterA {
+    struct InnerA {
+        InnerA(const OuterB::InnerB& x) {...}  // Error: No way to forward-declare OuterB::InnerB
+    };
+};
+struct OuterB {
+    struct InnerB {
+        InnerB(const OuterA::InnerA& x) {...}
+    };
+};
+But this template trick might still work.
+
+
+
+
+
+Mason Boswell  December 2, 2022
+
+
+  0  Collapse this comment
+Copy link
+Is it really worth this much trouble to avoid the preprocessor?
+#ifdef _CONTOSO_H_
+// code when contoso.h is included
+#endif
+
+
+
+
+
+Raymond Chen Author
+December 2, 2022
+
+
+  0  Collapse this comment
+Copy link
+Yes, because that creates an order-of-inclusion dependency. If somebody includes litware.h and then contoso.h, they get different results from including contoso.h and then litware.h. It means that somebody who comes in and “tidies” the code by sorting the includes files alphabetically (a common practice) is actually introducing a breaking change.

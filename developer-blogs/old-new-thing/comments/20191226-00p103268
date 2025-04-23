@@ -1,0 +1,61 @@
+Adam Rosenfield  December 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+> The two operations (updating m_queued and invoking the handle), so we don’t have a race condition between the setting of m_queued and its observation in await_ready.
+I assume that this sentence was supposed to say something like “The two operations (…) occur on the same thread, so…”.
+
+
+
+
+
+Kalle Niemitalo  December 26, 2019
+
+
+  0  Collapse this comment
+Copy link
+If someone does:
+void foo(DispatcherQueue queue)
+{
+    auto& fg{ resume_foreground(queue) };
+    if (!co_await fg) { /* handle the error */ }
+    co_await resume_background();
+    if (!co_await fg) { /* handle the error */ }
+}
+then the first co_await will set fg.m_queued = true when it resumes, and fg.m_queued will remain true even if the second TryEnqueue call fails, so the second /* handle the error */ cannot be reached. This is why the code I posted a few days ago did not rely on the previous...Read moreIf someone does:
+void foo(DispatcherQueue queue)
+{
+    auto& fg{ resume_foreground(queue) };
+    if (!co_await fg) { /* handle the error */ }
+    co_await resume_background();
+    if (!co_await fg) { /* handle the error */ }
+}
+then the first co_await will set fg.m_queued = true when it resumes, and fg.m_queued will remain true even if the second TryEnqueue call fails, so the second /* handle the error */ cannot be reached. This is why the code I posted a few days ago did not rely on the previous value of m_queued. I imagine it could be reasonable for a function template to take an awaitable object as a parameter and then co_await it several times.
+Perhaps there should be a guideline to separate the awaiter from the awaitable if one needs mutable state.
+Read less
+
+
+
+
+
+
+
+Neil Rashbrook  December 27, 2019
+
+
+  0  Collapse this comment
+Copy link
+I went back and found that comment, and I like your approach too; I would even go as far as to combine both approaches and set `m_queued` on the appropriate thread rather than when constructing the awaiter.
+
+
+
+
+
+Raymond Chen Author
+December 26, 2019
+
+
+  0  Collapse this comment
+Copy link
+It’s generally considered bad form to reuse an awaiter. Each awaiter manages a single co_await, and reusing it creates confusion. I see your point about generating a separate awaiter if it has mutable state, since it is not obvious to the client whether an object is its own awaiter.

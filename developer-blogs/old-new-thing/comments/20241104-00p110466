@@ -1,0 +1,77 @@
+Baltasar García  November 5, 2024
+
+
+  0  Collapse this comment
+Copy link
+I never understood this kind of undefined behaviour.  I mean, I understand that if you derreference a uninitialized pointer, then you can get an access violation, a trash value, or even (by chance), a valid value. It would even be better if the compiler warn you about it, though (at least you have valgrind).
+But this undefined behaviour you get when you set the maximum optimization of the compiler and have a bug in your program (I understand this is the case described)… its utility is beyond me. Go back in time? I mean. Come on.
+
+
+
+
+
+Chris Iverson  November 5, 2024
+
+
+  0  Collapse this comment
+Copy link
+It's not about utility to the person. It's about utility to the optimizer.
+The "time travel" happens when the optimizer moves parts of your program around, and winds up moving something around an instance of undefined behavior. You may see the effect of something before the undefined behavior happens that is in your code after the offending instruction, because the optimizer moved(or removed) it.
+The optimizer is allowed to do whatever it wants with code that contains undefined behavior, because the standard explicitly allows such. This allows a whole bevy of optimizations based on the assumption that undefined behavior won't happen,...Read moreIt’s not about utility to the person. It’s about utility to the optimizer.
+The “time travel” happens when the optimizer moves parts of your program around, and winds up moving something around an instance of undefined behavior. You may see the effect of something before the undefined behavior happens that is in your code after the offending instruction, because the optimizer moved(or removed) it.
+The optimizer is allowed to do whatever it wants with code that contains undefined behavior, because the standard explicitly allows such. This allows a whole bevy of optimizations based on the assumption that undefined behavior won’t happen, instead of needing to check for those instances.
+Read less
+
+
+
+
+
+
+
+Chris Iverson  November 6, 2024
+
+
+  0  Collapse this comment
+Copy link
+Because it can't always tell if there's undefined behavior. Sometimes it's only at runtime that it becomes undefined.
+Like this code from the time travel example:
+<code>
+Is this undefined behavior?  No. You check if it's null, and only use the value if it's not null.
+And then you add a printf for debugging purposes.
+<code>
+Is THAT undefined?
+Well, if you pass a NULL, then yes, it's undefined behavior.
+But if you never pass a NULL, then no, it's fully well-defined.
+What do you do if it's "maybe" undefined? Do you warn about it?
+Because compilers have looked into that. The warnings get insane. See the LLVM undefined...Read moreBecause it can’t always tell if there’s undefined behavior. Sometimes it’s only at runtime that it becomes undefined.
+Like this code from the time travel example:
+int value_or_fallback(int *p)
+{
+ return p ? *p : 42;
+}
+Is this undefined behavior?  No. You check if it’s null, and only use the value if it’s not null.
+And then you add a printf for debugging purposes.
+int value_or_fallback(int *p)
+{
+ printf("The value of *p is %d\n", *p);
+ return p ? *p : 42;
+}
+Is THAT undefined?
+Well, if you pass a NULL, then yes, it’s undefined behavior.
+But if you never pass a NULL, then no, it’s fully well-defined.
+What do you do if it’s “maybe” undefined? Do you warn about it?
+Because compilers have looked into that. The warnings get insane. See the LLVM undefined behavior series: https://blog.llvm.org/2011/05/what-every-c-programmer-should-know_21.html
+Read less
+
+
+
+
+
+
+
+Baltasar García  November 6, 2024
+
+
+  0  Collapse this comment
+Copy link
+Sure. My point is: why “allow” this undefined behaviour in the first place? Shouldn’t be better to stop the compilation with an error? The outcome of all of this is that above -O2, anything can happen. I don’t miss this quirks of C++.
